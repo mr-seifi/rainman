@@ -68,6 +68,38 @@ class NodePatch(BaseModel):
     props: dict = {}
 
 
+class EdgeIn(BaseModel):
+    type: EdgeType
+    from_id: str
+    to_id: str
+    props: dict = {}
+    author_type: AuthorType = AuthorType.human
+
+
+class FindingIn(BaseModel):
+    title: str
+    kind: str = "suspected"
+    severity: Optional[str] = None
+    vuln_class: Optional[str] = None
+    confidence: Optional[float] = None
+    note: Optional[str] = None
+    affects: list[str] = []
+    author_type: AuthorType = AuthorType.human
+
+
+class FunctionalityIn(BaseModel):
+    name: str
+    description: Optional[str] = None
+    members: list[str] = []
+    author_type: AuthorType = AuthorType.human
+
+
+class BulkStatusIn(BaseModel):
+    ids: list[str]
+    status: Optional[Status] = None
+    add_tags: list[str] = []
+
+
 def create_app(db_path: str = "rainman.db") -> FastAPI:
     repo = SqliteGraphRepository(db_path)
     svc = IngestService(repo)
@@ -184,5 +216,47 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         if not repo.remove_node(id):
             raise HTTPException(404, f"no node {id!r}")
         return {"removed": id}
+
+    # -- editor (§10) -----------------------------------------------------
+    @app.post("/edge")
+    def add_edge(payload: EdgeIn):
+        edge = repo.link_nodes(
+            payload.from_id, payload.to_id, payload.type,
+            author_type=payload.author_type, props=payload.props,
+        )
+        if edge is None:
+            raise HTTPException(404, "both from_id and to_id must already exist")
+        return {"edge": edge_to_dict(edge)}
+
+    @app.delete("/edge")
+    def delete_edge(id: str = Query(...)):
+        if not repo.remove_edge(id):
+            raise HTTPException(404, f"no edge {id!r}")
+        return {"removed": id}
+
+    @app.post("/finding")
+    def add_finding(payload: FindingIn):
+        node = svc.add_finding(
+            payload.title, kind=payload.kind, severity=payload.severity,
+            vuln_class=payload.vuln_class, confidence=payload.confidence,
+            note=payload.note, affects=payload.affects, author_type=payload.author_type,
+        )
+        return {"node": node_to_dict(node)}
+
+    @app.post("/functionality")
+    def add_functionality(payload: FunctionalityIn):
+        node = svc.create_functionality(
+            payload.name, description=payload.description,
+            members=payload.members, author_type=payload.author_type,
+        )
+        return {"node": node_to_dict(node)}
+
+    @app.post("/bulk/status")
+    def bulk_status(payload: BulkStatusIn):
+        return svc.bulk_set_status(
+            payload.ids,
+            payload.status.value if payload.status else None,
+            add_tags=payload.add_tags,
+        )
 
     return app

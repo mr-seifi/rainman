@@ -171,18 +171,48 @@ class SqliteGraphRepository:
     def upsert_edge(self, op: EdgeOp) -> Edge:
         from_id = make_id(op.from_value_type, op.from_value)
         to_id = make_id(op.to_value_type, op.to_value)
-        edge_id = f"edge:{op.type.value}:{from_id}:{to_id}"
+        return self._upsert_edge(
+            op.type, from_id, to_id, op.source, op.author_type, op.props
+        )
+
+    @_locked
+    def link_nodes(
+        self,
+        from_id: str,
+        to_id: str,
+        edge_type: EdgeType,
+        *,
+        source: str = "manual",
+        author_type: AuthorType = AuthorType.human,
+        props: Optional[dict] = None,
+    ) -> Optional[Edge]:
+        """Editor/agent edge creation by existing node id. Both endpoints must
+        already exist; returns None if either is missing."""
+        if self.get_node(from_id) is None or self.get_node(to_id) is None:
+            return None
+        return self._upsert_edge(edge_type, from_id, to_id, source, author_type, props or {})
+
+    def _upsert_edge(
+        self,
+        edge_type: EdgeType,
+        from_id: str,
+        to_id: str,
+        source: str,
+        author_type: AuthorType,
+        props: dict,
+    ) -> Edge:
+        edge_id = f"edge:{edge_type.value}:{from_id}:{to_id}"
         row = self._conn.execute("SELECT * FROM edges WHERE id=?", (edge_id,)).fetchone()
         if row is None:
             edge = Edge(
-                id=edge_id, type=op.type, from_id=from_id, to_id=to_id,
-                sources=[op.source] if op.source else [],
-                author_type=op.author_type, props=dict(op.props),
+                id=edge_id, type=edge_type, from_id=from_id, to_id=to_id,
+                sources=[source] if source else [],
+                author_type=author_type, props=dict(props),
             )
         else:
             edge = self._row_to_edge(row)
-            edge.sources = sorted(set(edge.sources) | ({op.source} if op.source else set()))
-            edge.props = {**edge.props, **op.props}
+            edge.sources = sorted(set(edge.sources) | ({source} if source else set()))
+            edge.props = {**edge.props, **props}
         self._conn.execute(
             """INSERT OR REPLACE INTO edges
                (id,type,from_id,to_id,sources,first_seen,author_type,props)

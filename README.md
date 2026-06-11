@@ -6,9 +6,10 @@ A graph-based recon asset manager. It ingests output from your recon stack
 whole attack surface from one place.
 
 See [PROPOSAL.md](PROPOSAL.md) for the full design. This repo currently
-implements **Phase 0 (Core)** and **Phase 1 (Recon coverage)** — the full
-importer fleet, the search/filter/status workflow, and the read-only graph
-**UI** (expand-on-click + detail panel).
+implements **Phase 0 (Core)**, **Phase 1 (Recon coverage)**, and **Phase 2
+(Editor)** — the full importer fleet, the search/filter/status workflow, the
+interactive graph UI, and manual editing (nodes/edges, `functionality`
+grouping, findings, bulk triage).
 
 ## What's built (Phase 0)
 
@@ -32,10 +33,16 @@ importer fleet, the search/filter/status workflow, and the read-only graph
 - **HTTP API** (`adapters/api/`) — FastAPI: `digest`, `search`, `node`,
   `neighborhood` (expand-on-click), `import/{tool}`, `ingest`, plus
   status/notes editing with state-machine enforcement.
-- **Graph UI** (`adapters/api/static/index.html`) — a single-file Cytoscape
-  viewer served at `/`. Starts at root domains, expands a node's 1-hop
-  neighborhood on click (lazy `/neighborhood` fetches), shows a per-node detail
-  panel, and filters by node type and status. No build step / node_modules.
+- **Graph UI + editor** (`adapters/api/static/index.html`) — a single-file
+  Cytoscape app served at `/`. Starts at root domains, expands a node's 1-hop
+  neighborhood on click (lazy `/neighborhood` fetches), filters by node type and
+  status. The detail panel is **editable** (status with legal-transition
+  enforcement, tags, notes, delete); **box-select** multiple nodes for bulk
+  triage, grouping into a `functionality`, creating a `finding` that `affects`
+  them, or linking two nodes by a chosen edge type. No build step / node_modules.
+- **Editor ops** (`domain/ingest.py`) — `add_finding`, `create_functionality`,
+  `bulk_set_status`, plus edge-by-id linking, all reused by the API (and ready
+  for the future MCP server).
 - **CLI** (`rainman …`).
 
 > **Store choice:** Phase 0 uses **SQLite** (zero-setup, fits local-first)

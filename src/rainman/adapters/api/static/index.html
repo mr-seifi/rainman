@@ -45,6 +45,23 @@
   code { background: #0b0e13; padding: 1px 4px; border-radius: 4px; word-break: break-all; }
   button.relayout { margin-left: auto; padding: 5px 10px; background: var(--bg); color: var(--fg);
     border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .btn { padding: 5px 9px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #04111f; border-color: var(--accent); font-weight: 600; }
+  .btn.danger:hover { border-color: var(--finding, #ff5370); color: #ff5370; }
+  #detail input, #detail select, #detail textarea { width: 100%; padding: 5px; background: var(--bg);
+    color: var(--fg); border: 1px solid var(--line); border-radius: 6px; margin: 3px 0 8px; font: inherit; }
+  #detail textarea { resize: vertical; min-height: 54px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  #cy { position: relative; }
+  #toolbar { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
+    display: none; gap: 8px; align-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 5; }
+  #toolbar.show { display: flex; }
+  #toolbar .count { color: var(--accent); font-weight: 600; }
+  #toolbar select { padding: 5px; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -66,8 +83,20 @@
     <div class="hint">Border = status. Click a node to expand its 1-hop
       neighborhood and see detail.</div>
   </aside>
-  <div id="cy"></div>
-  <div id="detail"><div class="hint">Select a node to see its detail.</div></div>
+  <div id="cy">
+    <div id="toolbar">
+      <span class="count" id="selCount">0</span><span class="muted">selected</span>
+      <select id="bulkStatus">
+        <option value="">set status…</option>
+      </select>
+      <button class="btn" onclick="bulkTag()">add tag</button>
+      <button class="btn" onclick="newFunctionality()">＋ functionality</button>
+      <button class="btn" onclick="newFinding()">＋ finding</button>
+      <button class="btn" id="linkBtn" onclick="linkSelected()">link 2</button>
+      <button class="btn" onclick="clearSel()">clear</button>
+    </div>
+  </div>
+  <div id="detail"><div class="hint">Click a node to view & edit. Shift-drag to box-select for bulk actions.</div></div>
 </div>
 
 <script>
@@ -82,26 +111,51 @@ const STATUS_COLORS = {
   confirmed: "#ff2d55", done: "#22c55e", ignored: "#3a414b", out_of_scope: "#3a414b",
 };
 const STATUSES = Object.keys(STATUS_COLORS);
-const activeTypes = new Set(Object.keys(TYPE_COLORS));
+// legal forward transitions, mirroring the backend state machine (model.py)
+const TRANSITIONS = {
+  untriaged: ["in_scope", "ignored", "out_of_scope"],
+  in_scope: ["testing", "flagged", "ignored", "out_of_scope"],
+  testing: ["flagged", "confirmed", "in_scope", "done"],
+  flagged: ["confirmed", "testing", "done", "ignored"],
+  confirmed: ["done", "flagged"],
+  done: ["in_scope"], ignored: ["in_scope"], out_of_scope: ["in_scope"],
+};
+const NODE_TYPES = Object.keys(TYPE_COLORS);
+const EDGE_TYPES = ["part_of", "affects", "resolves_to", "cname_to", "has_endpoint",
+  "has_param", "uses_tech", "runs_service", "shares_cert", "subdomain_of", "announced_by"];
+const activeTypes = new Set(NODE_TYPES);
 let statusFilter = "";
 
 const cy = cytoscape({
   container: document.getElementById("cy"),
-  wheelSensitivity: 0.25,
+  wheelSensitivity: 0.3,
+  boxSelectionEnabled: true,
+  selectionType: "additive",
+  minZoom: 0.05, maxZoom: 4,
+  // perf: render a static texture while panning/zooming and drop edges during
+  // viewport motion so zoom stays smooth regardless of graph size.
+  textureOnViewport: true,
+  hideEdgesOnViewport: true,
+  motionBlur: false,
+  pixelRatio: 1,
   style: [
     { selector: "node", style: {
         "background-color": ele => TYPE_COLORS[ele.data("type")] || "#888",
         "border-color": ele => STATUS_COLORS[ele.data("status")] || "#56606e",
         "border-width": 3, "label": "data(label)", "color": "#d7dee8",
         "font-size": 9, "text-valign": "bottom", "text-margin-y": 3,
+        "min-zoomed-font-size": 7,
         "text-max-width": 120, "text-wrap": "ellipsis", "width": 18, "height": 18 } },
     { selector: "node:selected", style: { "border-color": "#fff", "border-width": 4 } },
     { selector: "node.expanded", style: { "width": 24, "height": 24 } },
     { selector: "edge", style: {
         "width": 1, "line-color": "#39414d", "target-arrow-color": "#39414d",
         "target-arrow-shape": "triangle", "arrow-scale": 0.7,
-        "curve-style": "bezier", "label": "data(type)", "font-size": 7,
-        "color": "#6b7686", "text-rotation": "autorotate" } },
+        "curve-style": "bezier" } },
+    // edge type label only on the selected edge — keeps the canvas cheap.
+    { selector: "edge:selected", style: {
+        "label": "data(type)", "font-size": 7, "color": "#9fb0c3",
+        "text-rotation": "autorotate", "line-color": "#5a6675", "width": 2 } },
     { selector: ".hidden", style: { "display": "none" } },
   ],
 });
@@ -112,32 +166,46 @@ async function api(path) {
   return r.json();
 }
 
-function addNode(n) {
-  if (cy.getElementById(n.id).length) {
-    cy.getElementById(n.id).data({ status: n.status });
-    return;
-  }
-  cy.add({ group: "nodes", data: {
+// Returns true if a genuinely new node was added (so we only re-layout when
+// something changed). New nodes spawn near `near` so they grow out of the
+// clicked node instead of flying in from the origin.
+function addNode(n, near) {
+  const ex = cy.getElementById(n.id);
+  if (ex.length) { ex.data({ status: n.status }); return false; }
+  const position = near
+    ? { x: near.x + (Math.random() - 0.5) * 80, y: near.y + (Math.random() - 0.5) * 80 }
+    : undefined;
+  cy.add({ group: "nodes", position, data: {
     id: n.id, label: n.value, type: n.type, status: n.status, raw: n } });
+  return true;
 }
 function addEdge(e) {
-  if (cy.getElementById(e.id).length) return;
-  if (!cy.getElementById(e.from).length || !cy.getElementById(e.to).length) return;
+  if (cy.getElementById(e.id).length) return false;
+  if (!cy.getElementById(e.from).length || !cy.getElementById(e.to).length) return false;
   cy.add({ group: "edges", data: { id: e.id, source: e.from, target: e.to, type: e.type } });
+  return true;
 }
 
 async function expand(id) {
+  const parent = cy.getElementById(id);
+  const near = parent.length ? parent.position() : { x: 0, y: 0 };
   const d = await api(`/neighborhood?id=${encodeURIComponent(id)}`);
-  d.nodes.forEach(addNode);
-  d.edges.forEach(addEdge);
-  cy.getElementById(id).addClass("expanded");
+  let added = 0;
+  d.nodes.forEach(n => { if (addNode(n, near)) added++; });
+  d.edges.forEach(e => { if (addEdge(e)) added++; });
+  parent.addClass("expanded");
   applyFilters();
-  relayout();
+  if (added) gentleLayout();   // only reflow when the graph actually grew
 }
 
+let current = null;  // id shown in the editable detail panel
+
 async function showDetail(id) {
+  current = id;
   const d = await api(`/node?id=${encodeURIComponent(id)}`);
   const n = d.node, p = n.props || {};
+  const statusOpts = [n.status, ...(TRANSITIONS[n.status] || [])]
+    .map(s => `<option value="${s}" ${s === n.status ? "selected" : ""}>${s}</option>`).join("");
   const propRows = Object.entries(p).filter(([, v]) => v !== null && v !== "")
     .map(([k, v]) => `<div>${k}</div><div>${escapeHtml(JSON.stringify(v))}</div>`).join("");
   const neighbors = d.neighbors.map(x => `
@@ -148,14 +216,47 @@ async function showDetail(id) {
     <h2>${n.type}</h2>
     <div><code>${escapeHtml(n.value)}</code></div>
     <div class="kv">
-      <div>status</div><div><span class="pill" style="border-color:${STATUS_COLORS[n.status]}">${n.status}</span></div>
       <div>sources</div><div>${(n.sources||[]).join(", ") || "—"}</div>
-      <div>author</div><div>${n.author_type}</div>
-      <div>tags</div><div>${(n.tags||[]).join(", ") || "—"}</div>
+      <div>author</div><div>${n.author_type}${n.confidence != null ? ` · conf ${n.confidence}` : ""}</div>
     </div>
+    <h2>Status</h2>
+    <select id="edStatus">${statusOpts}</select>
+    <h2>Tags</h2>
+    <input id="edTags" value="${escapeHtml((n.tags||[]).join(', '))}" placeholder="comma,separated" />
+    <h2>Notes</h2>
+    <textarea id="edNotes" placeholder="your notes…">${escapeHtml(n.notes || "")}</textarea>
+    <div class="row">
+      <button class="btn primary" onclick="saveNode()">Save</button>
+      <button class="btn danger" onclick="deleteNode()">Delete</button>
+    </div>
+    ${n.type !== "finding" ? `<div class="row" style="margin-top:6px">
+      <button class="btn" onclick="addFindingHere()">＋ finding on this asset</button>
+    </div>` : ""}
     ${propRows ? `<h2>Props</h2><div class="kv">${propRows}</div>` : ""}
-    ${n.notes ? `<h2>Notes</h2><div>${escapeHtml(n.notes)}</div>` : ""}
     <h2>Neighbors (${d.neighbors.length})</h2>${neighbors}`;
+}
+
+async function saveNode() {
+  if (!current) return;
+  const status = document.getElementById("edStatus").value;
+  const tags = document.getElementById("edTags").value.split(",").map(s => s.trim()).filter(Boolean);
+  const notes = document.getElementById("edNotes").value;
+  const orig = cy.getElementById(current).data("status");
+  const body = { notes, add_tags: tags };
+  if (status !== orig) body.status = status;
+  const r = await fetch(`/node?id=${encodeURIComponent(current)}`,
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { alert(`save failed: ${(await r.json()).detail || r.status}`); return; }
+  cy.getElementById(current).data({ status });
+  applyFilters(); refreshStats(); showDetail(current);
+}
+
+async function deleteNode() {
+  if (!current || !confirm(`Delete ${current}?`)) return;
+  await fetch(`/node?id=${encodeURIComponent(current)}`, { method: "DELETE" });
+  cy.getElementById(current).remove();
+  document.getElementById("detail").innerHTML = `<div class="hint">Node deleted.</div>`;
+  current = null; refreshStats();
 }
 
 function focusNode(id) {
@@ -163,9 +264,20 @@ function focusNode(id) {
   if (el.length) { cy.center(el); el.select(); showDetail(id); expand(id); }
 }
 
+// randomize:false → starts from current positions and refines, so existing
+// nodes barely move (no full-graph scramble). fit:false → never hijacks the
+// viewport you're zoomed/panned into.
+function gentleLayout() {
+  cy.layout({ name: "cose", randomize: false, animate: true, animationDuration: 300,
+    nodeRepulsion: 9000, idealEdgeLength: 90, nodeOverlap: 14,
+    fit: false, padding: 40 }).run();
+}
+
+// explicit, user-initiated reorganize + fit (the "relayout" / fit button).
 function relayout() {
-  cy.layout({ name: "cose", animate: true, animationDuration: 350,
-    nodeRepulsion: 6000, idealEdgeLength: 70, fit: true, padding: 40 }).run();
+  cy.layout({ name: "cose", randomize: false, animate: true, animationDuration: 350,
+    nodeRepulsion: 9000, idealEdgeLength: 90, nodeOverlap: 14,
+    fit: true, padding: 50 }).run();
 }
 
 function applyFilters() {
@@ -189,6 +301,99 @@ function escapeHtml(s) {
 
 cy.on("tap", "node", e => { const id = e.target.id(); showDetail(id); expand(id); });
 
+// --- selection toolbar (bulk + create) -------------------------------------
+function selectedIds() { return cy.$("node:selected").map(n => n.id()); }
+
+function updateToolbar() {
+  const ids = selectedIds();
+  const tb = document.getElementById("toolbar");
+  document.getElementById("selCount").textContent = ids.length;
+  tb.classList.toggle("show", ids.length > 0);
+  document.getElementById("linkBtn").disabled = ids.length !== 2;
+}
+cy.on("select unselect", "node", updateToolbar);
+function clearSel() { cy.$(":selected").unselect(); updateToolbar(); }
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST",
+    headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { alert(`${path} failed: ${(await r.json()).detail || r.status}`); throw new Error(path); }
+  return r.json();
+}
+
+async function applyBulkStatus(status) {
+  const ids = selectedIds();
+  if (!ids.length || !status) return;
+  const res = await post("/bulk/status", { ids, status });
+  res.updated.forEach(id => cy.getElementById(id).data({ status }));
+  if (res.skipped.length) alert(`${res.skipped.length} skipped (illegal transition)`);
+  applyFilters(); refreshStats();
+  document.getElementById("bulkStatus").value = "";
+}
+
+async function bulkTag() {
+  const ids = selectedIds();
+  const tag = prompt(`Add tag to ${ids.length} node(s):`);
+  if (!tag) return;
+  await post("/bulk/status", { ids, add_tags: [tag.trim()] });
+  refreshStats();
+}
+
+async function newFunctionality() {
+  const members = selectedIds();
+  if (!members.length &&
+      !confirm("No assets selected. Create an empty functionality and attach assets later?")) return;
+  const name = prompt("Functionality name (e.g. 'password reset flow'):");
+  if (!name) return;
+  const { node } = await post("/functionality", { name, members });
+  addNode(node); clearSel(); await expand(node.id); refreshStats();
+  focusNode(node.id);
+}
+
+// Findings must map to an asset — created from a selection or from a node's
+// detail panel, never floating.
+async function createFinding(affects) {
+  const title = prompt(`Finding title (mapped to ${affects.length} asset(s)):`);
+  if (!title) return null;
+  const kind = prompt("kind: intuition / suspected / confirmed", "suspected") || "suspected";
+  const { node } = await post("/finding", { title, kind, affects });
+  return node;
+}
+
+async function newFinding() {
+  const affects = selectedIds();
+  if (!affects.length) {
+    alert("Select the asset(s) this finding affects first — or use “＋ finding on this asset” in a node's panel.");
+    return;
+  }
+  const node = await createFinding(affects);
+  if (!node) return;
+  addNode(node); clearSel(); await expand(node.id); refreshStats();
+  focusNode(node.id);
+}
+
+async function addFindingHere() {
+  if (!current) return;
+  const asset = current;
+  const node = await createFinding([asset]);
+  if (!node) return;
+  const near = cy.getElementById(asset).position();
+  addNode(node, near);
+  await expand(asset);     // re-pull the asset so the new affects edge renders
+  refreshStats();
+  showDetail(asset);       // keep focus on the asset, finding now a neighbor
+}
+
+async function linkSelected() {
+  const ids = selectedIds();
+  if (ids.length !== 2) return;
+  const type = prompt(`Edge type from\n  ${ids[0]}\nto\n  ${ids[1]}\n(${EDGE_TYPES.join(", ")})`, "part_of");
+  if (!type) return;
+  const { edge } = await post("/edge", { type, from_id: ids[0], to_id: ids[1] });
+  addEdge({ id: edge.id, from: edge.from, to: edge.to, type: edge.type });
+  applyFilters(); refreshStats();
+}
+
 // --- UI wiring -------------------------------------------------------------
 function buildTypeFilters() {
   const box = document.getElementById("typeFilters");
@@ -204,6 +409,17 @@ function buildTypeFilters() {
   const sel = document.getElementById("statusFilter");
   STATUSES.forEach(s => sel.add(new Option(s, s)));
   sel.addEventListener("change", () => { statusFilter = sel.value; applyFilters(); });
+
+  const bulk = document.getElementById("bulkStatus");
+  STATUSES.forEach(s => bulk.add(new Option(s, s)));
+  bulk.addEventListener("change", () => applyBulkStatus(bulk.value));
+
+  // The toolbar is overlaid inside #cy, so its mouse events would bubble to
+  // Cytoscape and be read as a background tap — which clears the selection
+  // before the button handler runs. Stop them at the toolbar.
+  const tb = document.getElementById("toolbar");
+  ["mousedown", "click", "wheel"].forEach(ev =>
+    tb.addEventListener(ev, e => e.stopPropagation()));
 }
 
 document.getElementById("search").addEventListener("keydown", async e => {
