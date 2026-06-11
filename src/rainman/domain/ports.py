@@ -54,6 +54,10 @@ class GraphRepository(Protocol):
         offset: int = 0,
     ) -> list[Node]: ...
 
+    def roots(self, limit: int = 100) -> list[Node]:
+        """Entry-point nodes the graph view starts from (programs/domains)."""
+        ...
+
     def digest(self) -> dict:
         """Counts by type/status + flagged/untriaged queues."""
         ...

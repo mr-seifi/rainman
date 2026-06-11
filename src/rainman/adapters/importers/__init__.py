@@ -16,6 +16,7 @@ from .kiterunner import KiteRunnerImporter
 from .naabu import NaabuImporter
 from .nmap import NmapImporter
 from .shuffledns import ShufflednsImporter
+from .subfinder import SubfinderImporter
 from .waybackurls import WaybackurlsImporter
 from .x8 import X8Importer
 
@@ -43,6 +44,7 @@ for _imp in (
     NmapImporter(),
     NaabuImporter(),
     ShufflednsImporter(),
+    SubfinderImporter(),
     KatanaImporter(),
     GauImporter(),
     WaybackurlsImporter(),

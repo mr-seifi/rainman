@@ -6,9 +6,9 @@ A graph-based recon asset manager. It ingests output from your recon stack
 whole attack surface from one place.
 
 See [PROPOSAL.md](PROPOSAL.md) for the full design. This repo currently
-implements **Phase 0 (Core)** and the importer/workflow half of **Phase 1
-(Recon coverage)**. The read-only graph **frontend** (Cytoscape viz) is the
-remaining Phase 0/1 item — the API that powers it is in place.
+implements **Phase 0 (Core)** and **Phase 1 (Recon coverage)** — the full
+importer fleet, the search/filter/status workflow, and the read-only graph
+**UI** (expand-on-click + detail panel).
 
 ## What's built (Phase 0)
 
@@ -32,6 +32,10 @@ remaining Phase 0/1 item — the API that powers it is in place.
 - **HTTP API** (`adapters/api/`) — FastAPI: `digest`, `search`, `node`,
   `neighborhood` (expand-on-click), `import/{tool}`, `ingest`, plus
   status/notes editing with state-machine enforcement.
+- **Graph UI** (`adapters/api/static/index.html`) — a single-file Cytoscape
+  viewer served at `/`. Starts at root domains, expands a node's 1-hop
+  neighborhood on click (lazy `/neighborhood` fetches), shows a per-node detail
+  panel, and filters by node type and status. No build step / node_modules.
 - **CLI** (`rainman …`).
 
 > **Store choice:** Phase 0 uses **SQLite** (zero-setup, fits local-first)
@@ -54,10 +58,11 @@ rainman import dnsx  dnsx-out.jsonl
 
 rainman digest                 # counts by type/status + flagged/untriaged
 rainman importers              # list available importers
-rainman serve --port 8000      # run the API
+rainman serve --port 8000      # run the API + graph UI
 ```
 
-The CLI and API share a SQLite file (`--db`, default `rainman.db`).
+Then open **http://localhost:8000** for the graph UI. The CLI and API share a
+SQLite file (`--db`, default `rainman.db`).
 
 ### Docker
 

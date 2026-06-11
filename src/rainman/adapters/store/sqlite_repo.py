@@ -286,6 +286,23 @@ class SqliteGraphRepository:
         return [self._row_to_node(r) for r in self._conn.execute(sql, args).fetchall()]
 
     @_locked
+    def roots(self, limit: int = 100) -> list[Node]:
+        """Entry-point nodes for the graph view: programs + domains, falling
+        back to subdomains when no apex/program nodes exist yet."""
+        rows = self._conn.execute(
+            "SELECT * FROM nodes WHERE type IN ('program','domain') "
+            "ORDER BY type, value LIMIT ?",
+            (limit,),
+        ).fetchall()
+        if not rows:
+            rows = self._conn.execute(
+                "SELECT * FROM nodes WHERE type='subdomain' "
+                "ORDER BY last_seen DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._row_to_node(r) for r in rows]
+
+    @_locked
     def digest(self) -> dict:
         by_type = {
             r["type"]: r["c"]

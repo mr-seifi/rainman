@@ -8,11 +8,15 @@ goes through IngestService so dedupe and validation live in one place.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+_STATIC = Path(__file__).parent / "static"
 
 from ...domain.ingest import IngestService
 from ...domain.model import (
@@ -75,9 +79,18 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.get("/", include_in_schema=False)
+    def index():
+        return FileResponse(_STATIC / "index.html")
+
     @app.get("/digest")
     def digest():
         return repo.digest()
+
+    @app.get("/roots")
+    def roots(limit: int = 100):
+        nodes = repo.roots(limit=limit)
+        return {"nodes": [node_to_dict(n) for n in nodes]}
 
     @app.get("/importers")
     def importers():

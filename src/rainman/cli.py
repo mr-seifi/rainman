@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from .adapters.importers import available, get_importer
 from .adapters.store import SqliteGraphRepository
 from .domain.ingest import IngestService
 
-DEFAULT_DB = "rainman.db"
+# Honor RAINMAN_DB so the CLI and the server agree on one file by default —
+# in the Docker image both resolve to /data/rainman.db, so `rainman import`
+# inside the container lands where the UI reads from.
+DEFAULT_DB = os.environ.get("RAINMAN_DB", "rainman.db")
 
 
 def _cmd_import(args: argparse.Namespace) -> int:
@@ -57,7 +61,10 @@ def _cmd_importers(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rainman", description=__doc__)
-    p.add_argument("--db", default=DEFAULT_DB, help=f"SQLite path (default {DEFAULT_DB})")
+    p.add_argument(
+        "--db", default=DEFAULT_DB,
+        help=f"SQLite path (default {DEFAULT_DB!r}, from $RAINMAN_DB or 'rainman.db')",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pi = sub.add_parser("import", help="import a tool's output file")

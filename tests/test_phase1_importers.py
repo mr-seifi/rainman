@@ -17,10 +17,23 @@ def svc():
 
 def test_all_phase1_importers_registered():
     expected = {
-        "httpx", "dnsx", "nmap", "naabu", "shuffledns", "katana",
+        "httpx", "dnsx", "nmap", "naabu", "shuffledns", "subfinder", "katana",
         "gau", "waybackurls", "ffuf", "kiterunner", "x8",
     }
     assert expected <= set(available())
+
+
+def test_subfinder_uses_input_as_apex(svc):
+    s, repo = svc
+    raw = (
+        '{"host":"cdn.memoryleaks.ir","input":"memoryleaks.ir","source":"submd"}\n'
+        '{"host":"test.memoryleaks.ir","input":"memoryleaks.ir","source":"rapiddns"}'
+    )
+    s.ingest(get_importer("subfinder").parse(raw))
+    _, subs = repo.neighbors(make_id(NodeType.domain, "memoryleaks.ir"), types=["subdomain"])
+    assert {n.value for n in subs} == {"cdn.memoryleaks.ir", "test.memoryleaks.ir"}
+    cdn = repo.get_node(make_id(NodeType.subdomain, "cdn.memoryleaks.ir"))
+    assert cdn.props["discovered_via"] == "submd"
 
 
 NMAP_XML = """<?xml version="1.0"?><nmaprun>
