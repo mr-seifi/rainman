@@ -1,0 +1,15 @@
+services:
+  rainman:
+    build: .
+    image: rainman:0.1.0
+    ports:
+      - "8000:8000"
+    volumes:
+      # graph persists here; also lets you drop recon output in to import
+      - rainman-data:/data
+    environment:
+      RAINMAN_DB: /data/rainman.db
+    restart: unless-stopped
+
+volumes:
+  rainman-data:
