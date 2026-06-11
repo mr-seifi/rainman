@@ -99,6 +99,7 @@ class Node:
     author_type: AuthorType = AuthorType.tool
     confidence: Optional[float] = None
     props: dict[str, Any] = field(default_factory=dict)
+    program: str = "default"
 
 
 @dataclass
@@ -111,6 +112,7 @@ class Edge:
     first_seen: datetime = field(default_factory=utcnow)
     author_type: AuthorType = AuthorType.tool
     props: dict[str, Any] = field(default_factory=dict)
+    program: str = "default"
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +133,7 @@ class NodeOp:
     author_type: AuthorType = AuthorType.tool
     confidence: Optional[float] = None
     props: dict[str, Any] = field(default_factory=dict)
+    program: str = "default"
 
 
 @dataclass
@@ -143,6 +146,7 @@ class EdgeOp:
     source: str
     author_type: AuthorType = AuthorType.tool
     props: dict[str, Any] = field(default_factory=dict)
+    program: str = "default"
 
 
 def merge_node(existing: Node, op: NodeOp, new_id: str) -> Node:

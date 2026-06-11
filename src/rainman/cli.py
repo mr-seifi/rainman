@@ -32,9 +32,9 @@ def _cmd_import(args: argparse.Namespace) -> int:
     raw = sys.stdin.read() if args.file == "-" else open(args.file, encoding="utf-8").read()
     repo = SqliteGraphRepository(args.db)
     svc = IngestService(repo)
-    result = svc.ingest(importer.parse(raw))
+    result = svc.ingest(importer.parse(raw), program=args.program)
     repo.close()
-    print(f"imported {args.tool}: {result}")
+    print(f"imported {args.tool} into program '{args.program}': {result}")
     return 0
 
 
@@ -70,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     pi = sub.add_parser("import", help="import a tool's output file")
     pi.add_argument("tool", help=f"one of: {', '.join(available())}")
     pi.add_argument("file", help="path to output file, or - for stdin")
+    pi.add_argument("--program", default="default", help="workspace to import into")
     pi.set_defaults(func=_cmd_import)
 
     pd = sub.add_parser("digest", help="print graph digest")

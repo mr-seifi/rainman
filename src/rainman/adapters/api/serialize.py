@@ -20,6 +20,7 @@ def node_to_dict(n: Node) -> dict:
         "author_type": n.author_type.value,
         "confidence": n.confidence,
         "props": n.props,
+        "program": n.program,
     }
 
 

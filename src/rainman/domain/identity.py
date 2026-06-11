@@ -77,9 +77,15 @@ def normalize_value(node_type: NodeType, value: str) -> str:
     return value.strip()
 
 
-def make_id(node_type: NodeType, value: str) -> str:
-    """Natural key = ``<prefix>:<normalized value>``."""
-    return f"{_PREFIX[node_type]}:{normalize_value(node_type, value)}"
+DEFAULT_PROGRAM = "default"
+
+
+def make_id(node_type: NodeType, value: str, program: str = DEFAULT_PROGRAM) -> str:
+    """Natural key = ``<prefix>:<normalized value>``, namespaced per program so
+    the same host in two programs stays two nodes. The default program is left
+    un-prefixed for backward compatibility with single-program data."""
+    base = f"{_PREFIX[node_type]}:{normalize_value(node_type, value)}"
+    return base if program == DEFAULT_PROGRAM else f"{program}::{base}"
 
 
 def host_of_url(url: str) -> str:

@@ -85,6 +85,7 @@ class FindingIn(BaseModel):
     note: Optional[str] = None
     affects: list[str] = []
     author_type: AuthorType = AuthorType.human
+    program: str = "default"
 
 
 class FunctionalityIn(BaseModel):
@@ -92,6 +93,7 @@ class FunctionalityIn(BaseModel):
     description: Optional[str] = None
     members: list[str] = []
     author_type: AuthorType = AuthorType.human
+    program: str = "default"
 
 
 class BulkStatusIn(BaseModel):
@@ -116,12 +118,16 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         return FileResponse(_STATIC / "index.html")
 
     @app.get("/digest")
-    def digest():
-        return repo.digest()
+    def digest(program: Optional[str] = None):
+        return repo.digest(program=program)
+
+    @app.get("/programs")
+    def programs():
+        return {"programs": repo.programs()}
 
     @app.get("/roots")
-    def roots(limit: int = 100):
-        nodes = repo.roots(limit=limit)
+    def roots(limit: int = 100, program: Optional[str] = None):
+        nodes = repo.roots(limit=limit, program=program)
         return {"nodes": [node_to_dict(n) for n in nodes]}
 
     @app.get("/importers")
@@ -133,10 +139,11 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         q: str = "",
         type: Optional[str] = None,
         status: Optional[str] = None,
+        program: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ):
-        nodes = repo.search(q, type=type, status=status, limit=limit, offset=offset)
+        nodes = repo.search(q, type=type, status=status, program=program, limit=limit, offset=offset)
         return {"nodes": [node_to_dict(n) for n in nodes]}
 
     @app.get("/node")
@@ -167,16 +174,20 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         }
 
     @app.post("/import/{tool}")
-    def import_tool(tool: str, data: str = Body(..., media_type="text/plain")):
+    def import_tool(
+        tool: str,
+        data: str = Body(..., media_type="text/plain"),
+        program: str = "default",
+    ):
         try:
             importer = get_importer(tool)
         except KeyError as e:
             raise HTTPException(404, str(e))
-        result = svc.ingest(importer.parse(data))
-        return {"tool": tool, "nodes": result.nodes, "edges": result.edges}
+        result = svc.ingest(importer.parse(data), program=program)
+        return {"tool": tool, "program": program, "nodes": result.nodes, "edges": result.edges}
 
     @app.post("/ingest")
-    def ingest(payload: IngestIn):
+    def ingest(payload: IngestIn, program: str = "default"):
         ops: list = []
         for n in payload.nodes:
             ops.append(NodeOp(
@@ -190,7 +201,7 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
                 to_value_type=e.to_type, to_value=e.to_value, source=e.source,
                 author_type=e.author_type, props=e.props,
             ))
-        result = svc.ingest(ops)
+        result = svc.ingest(ops, program=program)
         return {"nodes": result.nodes, "edges": result.edges}
 
     @app.patch("/node")
@@ -240,6 +251,7 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
             payload.title, kind=payload.kind, severity=payload.severity,
             vuln_class=payload.vuln_class, confidence=payload.confidence,
             note=payload.note, affects=payload.affects, author_type=payload.author_type,
+            program=payload.program,
         )
         return {"node": node_to_dict(node)}
 
@@ -248,6 +260,7 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         node = svc.create_functionality(
             payload.name, description=payload.description,
             members=payload.members, author_type=payload.author_type,
+            program=payload.program,
         )
         return {"node": node_to_dict(node)}
 

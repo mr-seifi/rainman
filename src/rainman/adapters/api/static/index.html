@@ -5,111 +5,318 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>rainman</title>
 <script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0e1116; --panel: #161b22; --line: #2a3340; --fg: #d7dee8;
+  /* themes — set on <html data-theme>; default (no attr) = midnight */
+  :root, :root[data-theme="midnight"] {
+    --bg: #0e1116; --title: #ffffff; --panel: #161b22; --line: #2a3340; --fg: #d7dee8;
     --muted: #8b97a7; --accent: #4f9dff;
   }
+  :root[data-theme="nord"] {
+    --bg: #2e3440; --title: #f4f7fc; --panel: #3b4252; --line: #4c566a; --fg: #e5e9f0;
+    --muted: #9aa5b8; --accent: #88c0d0;
+  }
+  :root[data-theme="slate"] {
+    --bg: #0b1020; --title: #ffffff; --panel: #141a2e; --line: #28314e; --fg: #dde3f0;
+    --muted: #8893b0; --accent: #7aa2f7;
+  }
+  :root[data-theme="rose"] {
+    --bg: #1a1220; --title: #fff4fb; --panel: #241829; --line: #3b2740; --fg: #f0e4ee;
+    --muted: #b794a8; --accent: #ff7eb6;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6fa; --title: #000000; --panel: #ffffff; --line: #d6dce6; --fg: #1c2430;
+    --muted: #5b6675; --accent: #2563eb;
+  }
+  :root[data-theme="hacking"] {
+    --bg: #000500; --title: #c7ffdd; --panel: #04120a; --line: #0f4020; --fg: #2bff88;
+    --muted: #1f9d52; --accent: #00ff41;
+  }
+  /* terminal flavor: monospace + faint green glow on text */
+  :root[data-theme="hacking"] body { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  :root[data-theme="hacking"] header h1,
+  :root[data-theme="hacking"] .panel-title { text-shadow: 0 0 6px rgba(0,255,65,.5); }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif;
+  html, body { margin: 0; height: 100%;
+    font: 13px/1.45 "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     background: var(--bg); color: var(--fg); }
-  #app { display: grid; grid-template-columns: 220px 1fr 320px; grid-template-rows: 48px 1fr;
-    grid-template-areas: "head head head" "side graph detail"; height: 100vh; }
-  header { grid-area: head; display: flex; align-items: center; gap: 14px; padding: 0 16px;
-    background: var(--panel); border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 15px; margin: 0; letter-spacing: .5px; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, "SF Mono", monospace; }
+  :root { --left-w: 230px; --right-w: 340px; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header { height: 50px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 14px;
+    background: linear-gradient(180deg, #1b212b, var(--panel));
+    border-bottom: 1px solid var(--line); box-shadow: 0 1px 0 rgba(255,255,255,.03) inset; }
+  header h1 { font-size: 15px; margin: 0 6px 0 0; letter-spacing: .5px; color: var(--title); }
   header h1 span { color: var(--accent); }
-  #search { flex: 1; max-width: 360px; padding: 6px 10px; background: var(--bg);
-    border: 1px solid var(--line); border-radius: 6px; color: var(--fg); }
+  .icon { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center;
+    justify-content: center; background-color: var(--panel); color: var(--muted);
+    border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 15px; line-height: 1;
+    transition: transform .1s, color .15s, border-color .15s, background-color .15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .icon:hover { color: var(--fg); border-color: var(--accent);
+    background-color: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+  .icon:active { transform: translateY(1px); box-shadow: none; }
+  #search { flex: 1; max-width: 380px; padding: 7px 11px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; color: var(--fg); }
+  #search:focus { outline: none; border-color: var(--accent); }
   #stats { color: var(--muted); font-size: 12px; }
-  aside, #detail { background: var(--panel); overflow-y: auto; padding: 12px; }
-  aside { grid-area: side; border-right: 1px solid var(--line); }
-  #detail { grid-area: detail; border-left: 1px solid var(--line); }
-  #cy { grid-area: graph; background: var(--bg); }
-  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
-    margin: 4px 0 8px; }
+  .hdr-select { width: auto; margin: 0; padding: 7px 30px 7px 11px; min-width: 112px; }
+
+  #content { flex: 1; display: flex; min-height: 0; position: relative; }
+  .panel { background: var(--panel); overflow-y: auto; flex: none; display: flex; flex-direction: column; }
+  .panel.collapsed { display: none; }
+  #left { width: var(--left-w); border-right: 1px solid var(--line); }
+  #detail { width: var(--right-w); border-left: 1px solid var(--line); }
+  .panel-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; background: rgba(22,27,34,.92); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line); }
+  .panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: .9px;
+    color: var(--title); font-weight: 700; }
+  .panel-head .icon { margin-left: auto; width: 24px; height: 24px; font-size: 12px; }
+  .panel-body { padding: 12px; }
+  #cy { flex: 1; min-width: 0; position: relative; background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--panel) 45%, var(--bg)), var(--bg)); }
+
+  /* drag handles between panels and the graph */
+  .resizer { flex: none; width: 7px; cursor: col-resize; position: relative; z-index: 3; }
+  .resizer::before { content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
+    background: transparent; transition: background .15s; }
+  .resizer:hover::before, .resizer.dragging::before { background: var(--accent); }
+
+  /* reopen tabs shown when a panel is collapsed */
+  .tab { position: absolute; top: 12px; z-index: 6; padding: 8px 6px; writing-mode: vertical-rl;
+    background: var(--panel); color: var(--muted); border: 1px solid var(--line); cursor: pointer;
+    font-size: 11px; letter-spacing: 1px; display: none; }
+  .tab:hover { color: var(--fg); border-color: var(--accent); }
+  .tab.show { display: block; }
+  #leftTab { left: 0; border-radius: 0 8px 8px 0; border-left: none; }
+  #rightTab { right: 0; border-radius: 8px 0 0 8px; border-right: none; }
+
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--title);
+    font-weight: 700; margin: 4px 0 8px; }
   .filter { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; }
   .swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
-  select { width: 100%; padding: 5px; background: var(--bg); color: var(--fg);
-    border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 1px solid #0b0e13; }
+  select { width: 100%; margin-bottom: 10px; padding: 7px 30px 7px 11px;
+    font: inherit; color: var(--fg); background-color: var(--panel);
+    border: 1px solid var(--line); border-radius: 9px; cursor: pointer;
+    appearance: none; -webkit-appearance: none; transition: border-color .15s, box-shadow .15s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%238b97a7' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  select:hover { border-color: var(--accent); }
+  select:focus-visible { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+  select option { background: var(--panel); color: var(--fg); }
   .muted { color: var(--muted); }
   .kv { display: grid; grid-template-columns: 92px 1fr; gap: 2px 8px; margin: 8px 0; }
   .kv div:nth-child(odd) { color: var(--muted); }
   .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
     border: 1px solid var(--line); }
-  .nb { padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; margin: 4px 0;
+  .nb { padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; margin: 4px 0;
     cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
   .nb:hover { border-color: var(--accent); }
   .nb small { color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 8px; }
+  .chip { padding: 2px 10px; border-radius: 999px; font-size: 11px; cursor: pointer;
+    color: var(--fg); background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); transition: .15s; }
+  .chip:hover { border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 26%, var(--panel)); }
   .hint { color: var(--muted); font-size: 12px; }
   code { background: #0b0e13; padding: 1px 4px; border-radius: 4px; word-break: break-all; }
-  button.relayout { margin-left: auto; padding: 5px 10px; background: var(--bg); color: var(--fg);
-    border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
-  .btn { padding: 5px 9px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-    border-radius: 6px; cursor: pointer; font-size: 12px; }
-  .btn:hover { border-color: var(--accent); }
-  .btn.primary { background: var(--accent); color: #04111f; border-color: var(--accent); font-weight: 600; }
-  .btn.danger:hover { border-color: var(--finding, #ff5370); color: #ff5370; }
-  #detail input, #detail select, #detail textarea { width: 100%; padding: 5px; background: var(--bg);
-    color: var(--fg); border: 1px solid var(--line); border-radius: 6px; margin: 3px 0 8px; font: inherit; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 6px 12px; min-height: 30px; font: 500 12px/1 "Inter", system-ui, sans-serif;
+    color: var(--fg); background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0));
+    background-color: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    cursor: pointer; white-space: nowrap; transition: transform .1s, border-color .15s, background-color .15s, box-shadow .15s;
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 1px 2px rgba(0,0,0,.25); }
+  .btn:hover { border-color: var(--accent); background-color: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+  .btn:active { transform: translateY(1px); box-shadow: none; }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn.primary { color: #04111f; font-weight: 600; border-color: transparent;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, white), var(--accent));
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .btn.primary:hover { background: var(--accent); }
+  .btn.danger:hover { border-color: #ff5370; color: #ff5370;
+    background-color: color-mix(in srgb, #ff5370 12%, var(--panel)); }
+  .btn.hunt.on { font-weight: 600; }
+  #detail input, #detail select, #detail textarea { width: 100%; padding: 6px; background: var(--bg);
+    color: var(--fg); border: 1px solid var(--line); border-radius: 7px; margin: 3px 0 8px; font: inherit; }
   #detail textarea { resize: vertical; min-height: 54px; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
-  #cy { position: relative; }
-  #toolbar { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
-    display: none; gap: 8px; align-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 5; }
+
+  #toolbar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(22,27,34,.78); backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 8px 10px;
+    display: none; gap: 8px; align-items: center; box-shadow: 0 10px 34px rgba(0,0,0,.5);
+    z-index: 5; max-width: calc(100% - 24px); }
   #toolbar.show { display: flex; }
-  #toolbar .count { color: var(--accent); font-weight: 600; }
-  #toolbar select { padding: 5px; background: var(--bg); color: var(--fg);
-    border: 1px solid var(--line); border-radius: 6px; }
+  #toolbar.min > :not(.grip):not(.count):not(.minBtn):not(.lbl) { display: none; }
+  #toolbar .grip { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none;
+    letter-spacing: -2px; }
+  #toolbar .grip:active { cursor: grabbing; }
+  #toolbar .count { color: var(--accent); font-weight: 700; }
+  #toolbar .lbl { color: var(--muted); }
+  #toolbar select { margin: 0; }
+  #toolbar .minBtn { margin-left: 2px; }
+
+  /* modal dialog — replaces native prompt() */
+  .modal-bg { position: fixed; inset: 0; z-index: 60; display: none;
+    align-items: center; justify-content: center; background: rgba(0,0,0,.55);
+    backdrop-filter: blur(4px); }
+  .modal-bg.show { display: flex; animation: fade .12s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .modal { width: 400px; max-width: calc(100vw - 32px); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0,0,0,.6); }
+  .modal h3 { margin: 0; padding: 15px 18px; font-size: 14px; border-bottom: 1px solid var(--line); }
+  .modal .body { padding: 14px 18px; display: flex; flex-direction: column; gap: 3px; }
+  .modal label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); margin-top: 8px; }
+  .modal input, .modal select, .modal textarea { width: 100%; padding: 8px 11px; margin: 3px 0;
+    font: inherit; color: var(--fg); background-color: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; }
+  .modal select { appearance: none; -webkit-appearance: none; }
+  .modal textarea { resize: vertical; min-height: 56px; }
+  .modal input:focus, .modal select:focus, .modal textarea:focus {
+    outline: none; border-color: var(--accent); }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 8px;
+    padding: 13px 18px; border-top: 1px solid var(--line); }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
+    <button class="icon" id="leftToggle" onclick="togglePanel('left')" title="Toggle filters">☰</button>
     <h1>rain<span>man</span></h1>
-    <input id="search" placeholder="search value or notes — Enter to add to graph" />
+    <select id="programSelect" class="hdr-select" title="Program / workspace"></select>
+    <button class="icon" onclick="openImport()" title="Import tool output">⤓</button>
+    <input id="search" placeholder="Find host · endpoint · tag — Enter to add to the graph" />
     <span id="stats"></span>
-    <button class="relayout" onclick="relayout()">relayout</button>
-  </header>
-  <aside>
-    <h2>Node types</h2>
-    <div id="typeFilters"></div>
-    <h2 style="margin-top:16px">Status</h2>
-    <select id="statusFilter">
-      <option value="">all statuses</option>
+    <select id="fontSelect" class="hdr-select" title="Font">
+      <option value="inter">Inter</option>
+      <option value="mono">JetBrains Mono</option>
+      <option value="system">System</option>
     </select>
-    <h2 style="margin-top:16px">Legend</h2>
-    <div class="hint">Border = status. Click a node to expand its 1-hop
-      neighborhood and see detail.</div>
-  </aside>
-  <div id="cy">
-    <div id="toolbar">
-      <span class="count" id="selCount">0</span><span class="muted">selected</span>
-      <select id="bulkStatus">
-        <option value="">set status…</option>
-      </select>
-      <button class="btn" onclick="bulkTag()">add tag</button>
-      <button class="btn" onclick="newFunctionality()">＋ functionality</button>
-      <button class="btn" onclick="newFinding()">＋ finding</button>
-      <button class="btn" id="linkBtn" onclick="linkSelected()">link 2</button>
-      <button class="btn" onclick="clearSel()">clear</button>
+    <select id="themeSelect" class="hdr-select" title="Theme">
+      <option value="midnight">Midnight</option>
+      <option value="slate">Slate</option>
+      <option value="nord">Nord</option>
+      <option value="rose">Rose</option>
+      <option value="light">Light</option>
+      <option value="hacking">Hacking mode</option>
+    </select>
+    <button class="icon" onclick="relayout()" title="Re-layout & fit">⤢</button>
+    <button class="icon" id="rightToggle" onclick="togglePanel('right')" title="Toggle detail">▤</button>
+  </header>
+  <div id="content">
+    <aside id="left" class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Filters</span>
+        <button class="icon" onclick="togglePanel('left')" title="Collapse">«</button>
+      </div>
+      <div class="panel-body">
+        <h2>Node types</h2>
+        <div id="typeFilters"></div>
+        <h2 style="margin-top:16px">Status</h2>
+        <select id="statusFilter"><option value="">all statuses</option></select>
+        <h2 style="margin-top:16px">Legend</h2>
+        <div class="hint">Border = status · size = type. Click a node to toggle
+          its 1-hop neighborhood. Box-select for bulk actions.</div>
+        <h2 style="margin-top:16px">Hunt</h2>
+        <div id="huntLegend"></div>
+      </div>
+    </aside>
+    <div class="resizer" data-side="left" title="Drag to resize"></div>
+
+    <div id="cy">
+      <div id="toolbar">
+        <span class="grip" title="Drag to move">⋮⋮</span>
+        <span class="count" id="selCount">0</span><span class="lbl">selected</span>
+        <select id="bulkStatus"><option value="">set status…</option></select>
+        <button class="btn" onclick="bulkTag()">add tag</button>
+        <button class="btn" onclick="newFunctionality()">＋ functionality</button>
+        <button class="btn" onclick="newFinding()">＋ finding</button>
+        <button class="btn" id="linkBtn" onclick="linkSelected()">link 2</button>
+        <button class="btn" onclick="clearSel()">clear</button>
+        <button class="icon minBtn" onclick="toggleToolbarMin()" title="Minimize">–</button>
+      </div>
+    </div>
+
+    <div class="resizer" data-side="right" title="Drag to resize"></div>
+    <aside id="detail" class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Detail</span>
+        <button class="icon" onclick="togglePanel('right')" title="Collapse">»</button>
+      </div>
+      <div class="panel-body" id="detailBody">
+        <div class="hint">Click a node to view &amp; edit.</div>
+      </div>
+    </aside>
+
+    <div class="tab" id="leftTab" onclick="togglePanel('left')">FILTERS</div>
+    <div class="tab" id="rightTab" onclick="togglePanel('right')">DETAIL</div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <form class="body" id="modalForm"></form>
+    <div class="actions">
+      <button class="btn" id="modalCancel" type="button">Cancel</button>
+      <button class="btn primary" id="modalSubmit" type="button">OK</button>
     </div>
   </div>
-  <div id="detail"><div class="hint">Click a node to view & edit. Shift-drag to box-select for bulk actions.</div></div>
 </div>
 
 <script>
-const TYPE_COLORS = {
+const TYPE_COLORS_DEFAULT = {
   program: "#c792ea", domain: "#82aaff", subdomain: "#4f9dff", ip: "#f78c6c",
   asn: "#ffcb6b", service: "#f07178", endpoint: "#c3e88d", parameter: "#89ddff",
   technology: "#b2ccd6", certificate: "#7fdbca", finding: "#ff5370",
   functionality: "#d7aefb",
 };
+// hacking mode: a spread across lime → emerald → teal so types stay
+// distinguishable while keeping the green/black aesthetic
+const TYPE_COLORS_HACKING = {
+  program: "#00ff41", domain: "#b6ff00", subdomain: "#00e676", ip: "#00e5d0",
+  asn: "#d4ff3a", service: "#19ffa6", endpoint: "#9dff5c", parameter: "#5cffd6",
+  technology: "#2f9e54", certificate: "#00ffc8", finding: "#f2ff00",
+  functionality: "#7cfc9a",
+};
+const paletteFor = name => (name === "hacking" ? TYPE_COLORS_HACKING : TYPE_COLORS_DEFAULT);
+let TYPE_COLORS = TYPE_COLORS_DEFAULT;   // active palette, swapped by theme
 const STATUS_COLORS = {
   untriaged: "#56606e", in_scope: "#4f9dff", testing: "#ffcb6b", flagged: "#ff5370",
   confirmed: "#ff2d55", done: "#22c55e", ignored: "#3a414b", out_of_scope: "#3a414b",
 };
+// node diameter by type — apex domains read as the largest hubs, params smallest
+const SIZE = {
+  program: 38, domain: 30, functionality: 26, asn: 24, ip: 22, subdomain: 18,
+  certificate: 18, finding: 18, service: 16, technology: 16, endpoint: 14, parameter: 12,
+};
+const sizeOf = ele => SIZE[ele.data("type")] || 18;
+
+// hunt progress — independent of triage status; drawn as a presence dot at the
+// node's top-right corner.
+const HUNT = {
+  working:    { label: "working",    color: "#f5a623" },
+  worked:     { label: "worked",     color: "#22c55e" },
+  not_worked: { label: "not worked", color: "#ff4d6d" },
+};
+function huntBadge(ele) {
+  const h = HUNT[ele.data("hunt")];
+  if (!h) return "none";
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'>` +
+    `<circle cx='10' cy='10' r='7' fill='${h.color}' stroke='#0b0e13' stroke-width='3'/></svg>`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+
 const STATUSES = Object.keys(STATUS_COLORS);
 // legal forward transitions, mirroring the backend state machine (model.py)
 const TRANSITIONS = {
@@ -125,6 +332,28 @@ const EDGE_TYPES = ["part_of", "affects", "resolves_to", "cname_to", "has_endpoi
   "has_param", "uses_tech", "runs_service", "shares_cert", "subdomain_of", "announced_by"];
 const activeTypes = new Set(NODE_TYPES);
 let statusFilter = "";
+const posCache = {};   // id → {x,y}, remembered across collapse so toggling keeps layout
+
+// graph label color per theme (chrome colors live in CSS [data-theme] blocks)
+const GRAPH_TEXT_BY_THEME = {
+  midnight: "#d7dee8", nord: "#e5e9f0", slate: "#dde3f0", rose: "#f0e4ee",
+  light: "#1c2430", hacking: "#2bff88",
+};
+const savedTheme = localStorage.getItem("rm_theme") || "midnight";
+document.documentElement.dataset.theme = savedTheme;
+let GRAPH_TEXT = GRAPH_TEXT_BY_THEME[savedTheme] || "#d7dee8";
+TYPE_COLORS = paletteFor(savedTheme);
+
+// active program (workspace) — every roots/search/digest/create call is scoped to it
+let currentProgram = localStorage.getItem("rm_program") || "default";
+
+// font choices applied to UI + graph labels
+const FONTS = {
+  inter: '"Inter", ui-sans-serif, system-ui, sans-serif',
+  mono: '"JetBrains Mono", ui-monospace, "SF Mono", monospace',
+  system: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
+};
+let GRAPH_FONT = FONTS[localStorage.getItem("rm_font") || "inter"];
 
 const cy = cytoscape({
   container: document.getElementById("cy"),
@@ -132,22 +361,31 @@ const cy = cytoscape({
   boxSelectionEnabled: true,
   selectionType: "additive",
   minZoom: 0.05, maxZoom: 4,
-  // perf: render a static texture while panning/zooming and drop edges during
-  // viewport motion so zoom stays smooth regardless of graph size.
-  textureOnViewport: true,
+  // perf: drop edges during pan/zoom so motion stays smooth. (No pixelRatio
+  // override — it now renders at the display's native DPR, so labels are crisp
+  // on retina instead of upscaled 1× blur.)
   hideEdgesOnViewport: true,
   motionBlur: false,
-  pixelRatio: 1,
+  textureOnViewport: false,
   style: [
     { selector: "node", style: {
         "background-color": ele => TYPE_COLORS[ele.data("type")] || "#888",
         "border-color": ele => STATUS_COLORS[ele.data("status")] || "#56606e",
-        "border-width": 3, "label": "data(label)", "color": "#d7dee8",
-        "font-size": 9, "text-valign": "bottom", "text-margin-y": 3,
-        "min-zoomed-font-size": 7,
-        "text-max-width": 120, "text-wrap": "ellipsis", "width": 18, "height": 18 } },
+        "border-width": 3, "label": "data(label)", "color": GRAPH_TEXT,
+        "font-family": GRAPH_FONT, "font-size": 10, "font-weight": 500,
+        "text-valign": "bottom", "text-margin-y": 4, "min-zoomed-font-size": 6,
+        "text-max-width": 130, "text-wrap": "ellipsis",
+        "width": sizeOf, "height": sizeOf,
+        // hunt presence dot at the top-right corner (overflows the node body)
+        "background-image": huntBadge,
+        "background-width": 9, "background-height": 9,
+        "background-position-x": "100%", "background-position-y": "0%",
+        "background-image-containment": "over", "background-clip": "none",
+        "background-image-opacity": 1, "bounds-expansion": 6 } },
     { selector: "node:selected", style: { "border-color": "#fff", "border-width": 4 } },
-    { selector: "node.expanded", style: { "width": 24, "height": 24 } },
+    // expanded nodes get a soft halo (not a size change, so type sizing holds)
+    { selector: "node.expanded", style: {
+        "underlay-color": "#4f9dff", "underlay-opacity": 0.18, "underlay-padding": 6 } },
     { selector: "edge", style: {
         "width": 1, "line-color": "#39414d", "target-arrow-color": "#39414d",
         "target-arrow-shape": "triangle", "arrow-scale": 0.7,
@@ -166,18 +404,16 @@ async function api(path) {
   return r.json();
 }
 
-// Returns true if a genuinely new node was added (so we only re-layout when
-// something changed). New nodes spawn near `near` so they grow out of the
-// clicked node instead of flying in from the origin.
-function addNode(n, near) {
+// Adds a node if new; returns the new node collection, or null if it existed.
+// Position is set explicitly by the caller so layout is never needed on add.
+function addNode(n, position) {
   const ex = cy.getElementById(n.id);
-  if (ex.length) { ex.data({ status: n.status }); return false; }
-  const position = near
-    ? { x: near.x + (Math.random() - 0.5) * 80, y: near.y + (Math.random() - 0.5) * 80 }
-    : undefined;
-  cy.add({ group: "nodes", position, data: {
-    id: n.id, label: n.value, type: n.type, status: n.status, raw: n } });
-  return true;
+  if (ex.length) { ex.data({ status: n.status }); return null; }
+  const node = cy.add({ group: "nodes", position, data: {
+    id: n.id, label: n.value, type: n.type, status: n.status,
+    hunt: (n.props && n.props.hunt) || "not_worked", raw: n } });
+  node.style({ "color": GRAPH_TEXT, "font-family": GRAPH_FONT });   // active theme + font
+  return node;
 }
 function addEdge(e) {
   if (cy.getElementById(e.id).length) return false;
@@ -186,16 +422,88 @@ function addEdge(e) {
   return true;
 }
 
+// Lay new nodes on a ring around a fixed center. Only these nodes are placed;
+// nothing already on the canvas is touched — so adding never shifts the graph.
+// Place new nodes on concentric rings around a center, spaced by node size so
+// they never overlap. Each ring holds as many as fit at its circumference.
+function placeRing(center, nodes) {
+  if (!nodes.length) return;
+  const slot = 46;                       // min spacing between node centers
+  let placed = 0, ring = 1;
+  while (placed < nodes.length) {
+    const radius = 80 + (ring - 1) * 70;
+    const capacity = Math.max(6, Math.floor((2 * Math.PI * radius) / slot));
+    const count = Math.min(capacity, nodes.length - placed);
+    const offset = ring * 0.6;            // rotate each ring so spokes don't align
+    for (let i = 0; i < count; i++) {
+      const a = (2 * Math.PI * i) / count - Math.PI / 2 + offset;
+      nodes[placed + i].position({
+        x: center.x + radius * Math.cos(a),
+        y: center.y + radius * Math.sin(a),
+      });
+    }
+    placed += count;
+    ring++;
+  }
+}
+
+function centroid(ids) {
+  const pts = ids.map(id => cy.getElementById(id)).filter(e => e.length).map(e => e.position());
+  if (!pts.length) { const e = cy.extent(); return { x: (e.x1 + e.x2) / 2, y: (e.y1 + e.y2) / 2 }; }
+  return {
+    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+  };
+}
+
 async function expand(id) {
   const parent = cy.getElementById(id);
-  const near = parent.length ? parent.position() : { x: 0, y: 0 };
+  const center = parent.length ? parent.position() : { x: 0, y: 0 };
   const d = await api(`/neighborhood?id=${encodeURIComponent(id)}`);
-  let added = 0;
-  d.nodes.forEach(n => { if (addNode(n, near)) added++; });
-  d.edges.forEach(e => { if (addEdge(e)) added++; });
+  const ring = [];   // only nodes with no remembered position go on the ring
+  d.nodes.forEach(n => {
+    const cached = posCache[n.id];
+    const added = addNode(n, cached);
+    if (added && !cached) ring.push(added);
+  });
+  d.edges.forEach(addEdge);
   parent.addClass("expanded");
+  placeRing(center, ring);
   applyFilters();
-  if (added) gentleLayout();   // only reflow when the graph actually grew
+}
+
+// Collapse: remove the subtree hanging off `node` that isn't reachable from the
+// roots any other way. Nodes shared with other branches (still reachable) and
+// the node itself stay. Inverse of expand, so clicking a node toggles it.
+function collapse(node) {
+  const cid = node.id();
+  // subtree = everything reachable from node's neighbors without going back through node
+  const subtree = new Set();
+  let frontier = node.connectedEdges().connectedNodes().filter(n => n.id() !== cid).map(n => n.id());
+  frontier.forEach(id => subtree.add(id));
+  for (let i = 0; i < frontier.length; i++) {
+    cy.getElementById(frontier[i]).connectedEdges().connectedNodes().forEach(m => {
+      if (m.id() !== cid && !subtree.has(m.id())) { subtree.add(m.id()); frontier.push(m.id()); }
+    });
+  }
+  // reachable = BFS from the root nodes, never passing through the collapsed node
+  const reach = new Set();
+  const q = cy.nodes(".root").filter(n => n.id() !== cid).map(n => n.id());
+  q.forEach(id => reach.add(id));
+  for (let i = 0; i < q.length; i++) {
+    if (q[i] === cid) continue;
+    cy.getElementById(q[i]).connectedEdges().connectedNodes().forEach(m => {
+      if (m.id() === cid || reach.has(m.id())) return;
+      reach.add(m.id()); q.push(m.id());
+    });
+  }
+  const remove = [...subtree].filter(id => !reach.has(id));
+  remove.forEach(id => {                       // remember where each node was
+    const el = cy.getElementById(id);
+    if (el.length) posCache[id] = { ...el.position() };
+  });
+  cy.collection(remove.map(id => cy.getElementById(id))).remove();
+  node.removeClass("expanded");
 }
 
 let current = null;  // id shown in the editable detail panel
@@ -206,13 +514,17 @@ async function showDetail(id) {
   const n = d.node, p = n.props || {};
   const statusOpts = [n.status, ...(TRANSITIONS[n.status] || [])]
     .map(s => `<option value="${s}" ${s === n.status ? "selected" : ""}>${s}</option>`).join("");
-  const propRows = Object.entries(p).filter(([, v]) => v !== null && v !== "")
+  const propRows = Object.entries(p).filter(([k, v]) => v !== null && v !== "" && k !== "hunt")
     .map(([k, v]) => `<div>${k}</div><div>${escapeHtml(JSON.stringify(v))}</div>`).join("");
+  const hunt = p.hunt || "not_worked";   // default state
+  const huntBtns = Object.entries(HUNT).map(([k, h]) =>
+    `<button class="btn hunt ${hunt === k ? "on" : ""}" style="${hunt === k ? `border-color:${h.color};color:${h.color}` : ""}"
+       onclick="setHunt('${k}')">${h.label}</button>`).join("");
   const neighbors = d.neighbors.map(x => `
     <div class="nb" onclick="focusNode('${x.id}')">
       <span>${escapeHtml(x.value)}</span><small>${x.type}</small></div>`).join("") ||
     `<div class="hint">No neighbors loaded.</div>`;
-  document.getElementById("detail").innerHTML = `
+  document.getElementById("detailBody").innerHTML = `
     <h2>${n.type}</h2>
     <div><code>${escapeHtml(n.value)}</code></div>
     <div class="kv">
@@ -221,8 +533,13 @@ async function showDetail(id) {
     </div>
     <h2>Status</h2>
     <select id="edStatus">${statusOpts}</select>
+    <h2>Hunt</h2>
+    <div class="row">${huntBtns}</div>
     <h2>Tags</h2>
-    <input id="edTags" value="${escapeHtml((n.tags||[]).join(', '))}" placeholder="comma,separated" />
+    ${(n.tags||[]).length ? `<div class="chips">${n.tags.map(t =>
+      `<span class="chip" onclick="searchTag(this.textContent)" title="Pull in everything tagged this">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+    <input id="edTags" value="${escapeHtml((n.tags||[]).join(', '))}" placeholder="add tags, comma-separated" />
+    <div class="hint" style="margin:-4px 0 4px">Click a tag to find every asset sharing it.</div>
     <h2>Notes</h2>
     <textarea id="edNotes" placeholder="your notes…">${escapeHtml(n.notes || "")}</textarea>
     <div class="row">
@@ -251,11 +568,23 @@ async function saveNode() {
   applyFilters(); refreshStats(); showDetail(current);
 }
 
+// Hunt status is stored in props.hunt; PATCH merges props, the badge re-renders
+// from the node's `hunt` data.
+async function setHunt(value) {
+  if (!current) return;
+  const r = await fetch(`/node?id=${encodeURIComponent(current)}`,
+    { method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ props: { hunt: value } }) });
+  if (!r.ok) { alert(`hunt update failed: ${(await r.json()).detail || r.status}`); return; }
+  cy.getElementById(current).data("hunt", value);
+  showDetail(current);   // refresh the active-button highlight
+}
+
 async function deleteNode() {
   if (!current || !confirm(`Delete ${current}?`)) return;
   await fetch(`/node?id=${encodeURIComponent(current)}`, { method: "DELETE" });
   cy.getElementById(current).remove();
-  document.getElementById("detail").innerHTML = `<div class="hint">Node deleted.</div>`;
+  document.getElementById("detailBody").innerHTML = `<div class="hint">Node deleted.</div>`;
   current = null; refreshStats();
 }
 
@@ -264,19 +593,11 @@ function focusNode(id) {
   if (el.length) { cy.center(el); el.select(); showDetail(id); expand(id); }
 }
 
-// randomize:false → starts from current positions and refines, so existing
-// nodes barely move (no full-graph scramble). fit:false → never hijacks the
-// viewport you're zoomed/panned into.
-function gentleLayout() {
-  cy.layout({ name: "cose", randomize: false, animate: true, animationDuration: 300,
-    nodeRepulsion: 9000, idealEdgeLength: 90, nodeOverlap: 14,
-    fit: false, padding: 40 }).run();
-}
-
 // explicit, user-initiated reorganize + fit (the "relayout" / fit button).
+// This is the ONLY place a global layout runs — never automatically on add.
 function relayout() {
   cy.layout({ name: "cose", randomize: false, animate: true, animationDuration: 350,
-    nodeRepulsion: 9000, idealEdgeLength: 90, nodeOverlap: 14,
+    nodeRepulsion: 14000, idealEdgeLength: 110, nodeOverlap: 24, componentSpacing: 140,
     fit: true, padding: 50 }).run();
 }
 
@@ -299,7 +620,11 @@ function escapeHtml(s) {
     ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
 
-cy.on("tap", "node", e => { const id = e.target.id(); showDetail(id); expand(id); });
+cy.on("tap", "node", e => {
+  const node = e.target;
+  showDetail(node.id());
+  node.hasClass("expanded") ? collapse(node) : expand(node.id());
+});
 
 // --- selection toolbar (bulk + create) -------------------------------------
 function selectedIds() { return cy.$("node:selected").map(n => n.id()); }
@@ -333,30 +658,40 @@ async function applyBulkStatus(status) {
 
 async function bulkTag() {
   const ids = selectedIds();
-  const tag = prompt(`Add tag to ${ids.length} node(s):`);
-  if (!tag) return;
-  await post("/bulk/status", { ids, add_tags: [tag.trim()] });
+  const res = await openModal({ title: `Tag ${ids.length} node(s)`,
+    fields: [{ name: "tag", label: "Tag", placeholder: "e.g. auth" }], submitLabel: "Add tag" });
+  if (!res || !res.tag) return;
+  await post("/bulk/status", { ids, add_tags: [res.tag] });
   refreshStats();
 }
 
 async function newFunctionality() {
   const members = selectedIds();
-  if (!members.length &&
-      !confirm("No assets selected. Create an empty functionality and attach assets later?")) return;
-  const name = prompt("Functionality name (e.g. 'password reset flow'):");
-  if (!name) return;
-  const { node } = await post("/functionality", { name, members });
-  addNode(node); clearSel(); await expand(node.id); refreshStats();
-  focusNode(node.id);
+  const res = await openModal({ title: "New functionality", submitLabel: "Create", fields: [
+    { name: "name", label: "Name", placeholder: "e.g. password reset flow" },
+    { name: "description", label: "Description (optional)", type: "textarea" },
+  ] });
+  if (!res || !res.name) return;
+  const { node } = await post("/functionality",
+    { name: res.name, description: res.description, members, program: currentProgram });
+  addNode(node, centroid(members));   // sit at the middle of its members
+  clearSel();
+  await expand(node.id);              // draws part_of edges; members don't move
+  refreshStats(); cy.getElementById(node.id).select(); showDetail(node.id);
 }
 
 // Findings must map to an asset — created from a selection or from a node's
 // detail panel, never floating.
 async function createFinding(affects) {
-  const title = prompt(`Finding title (mapped to ${affects.length} asset(s)):`);
-  if (!title) return null;
-  const kind = prompt("kind: intuition / suspected / confirmed", "suspected") || "suspected";
-  const { node } = await post("/finding", { title, kind, affects });
+  const res = await openModal({ title: `New finding (${affects.length} asset(s))`, submitLabel: "Create",
+    fields: [
+      { name: "title", label: "Title", placeholder: "e.g. IDOR on /v2/users" },
+      { name: "kind", label: "Kind", type: "select", value: "suspected",
+        options: ["intuition", "suspected", "confirmed"] },
+    ] });
+  if (!res || !res.title) return null;
+  const { node } = await post("/finding",
+    { title: res.title, kind: res.kind, affects, program: currentProgram });
   return node;
 }
 
@@ -368,8 +703,10 @@ async function newFinding() {
   }
   const node = await createFinding(affects);
   if (!node) return;
-  addNode(node); clearSel(); await expand(node.id); refreshStats();
-  focusNode(node.id);
+  addNode(node, centroid(affects));
+  clearSel();
+  await expand(node.id); refreshStats();
+  cy.getElementById(node.id).select(); showDetail(node.id);
 }
 
 async function addFindingHere() {
@@ -377,8 +714,7 @@ async function addFindingHere() {
   const asset = current;
   const node = await createFinding([asset]);
   if (!node) return;
-  const near = cy.getElementById(asset).position();
-  addNode(node, near);
+  addNode(node, centroid([asset]));
   await expand(asset);     // re-pull the asset so the new affects edge renders
   refreshStats();
   showDetail(asset);       // keep focus on the asset, finding now a neighbor
@@ -387,9 +723,12 @@ async function addFindingHere() {
 async function linkSelected() {
   const ids = selectedIds();
   if (ids.length !== 2) return;
-  const type = prompt(`Edge type from\n  ${ids[0]}\nto\n  ${ids[1]}\n(${EDGE_TYPES.join(", ")})`, "part_of");
-  if (!type) return;
-  const { edge } = await post("/edge", { type, from_id: ids[0], to_id: ids[1] });
+  const res = await openModal({ title: "Link two nodes", submitLabel: "Link", fields: [
+    { name: "type", label: `${ids[0]}  →  ${ids[1]}`, type: "select",
+      value: "part_of", options: EDGE_TYPES },
+  ] });
+  if (!res || !res.type) return;
+  const { edge } = await post("/edge", { type: res.type, from_id: ids[0], to_id: ids[1] });
   addEdge({ id: edge.id, from: edge.from, to: edge.to, type: edge.type });
   applyFilters(); refreshStats();
 }
@@ -406,6 +745,9 @@ function buildTypeFilters() {
     cb.checked ? activeTypes.add(cb.dataset.type) : activeTypes.delete(cb.dataset.type);
     applyFilters();
   }));
+  document.getElementById("huntLegend").innerHTML = Object.values(HUNT).map(h =>
+    `<div class="filter"><span class="dot" style="background:${h.color}"></span>${h.label}</div>`).join("");
+
   const sel = document.getElementById("statusFilter");
   STATUSES.forEach(s => sel.add(new Option(s, s)));
   sel.addEventListener("change", () => { statusFilter = sel.value; applyFilters(); });
@@ -422,34 +764,304 @@ function buildTypeFilters() {
     tb.addEventListener(ev, e => e.stopPropagation()));
 }
 
+// Pull search matches (value / notes / tags) onto the canvas. Shared by the
+// search box and tag-chip clicks; never repositions existing nodes.
+async function runSearch(query, limit = 100) {
+  const d = await api(`/search?q=${encodeURIComponent(query)}&limit=${limit}&program=${encodeURIComponent(currentProgram)}`);
+  if (!d.nodes.length) { alert(`no matches for “${query}” in ${currentProgram}`); return null; }
+  const fresh = [];
+  d.nodes.forEach(n => { const a = addNode(n); if (a) fresh.push(a); });
+  placeRing(centroid([]), fresh);
+  applyFilters();
+  return d.nodes;
+}
+
 document.getElementById("search").addEventListener("keydown", async e => {
   if (e.key !== "Enter" || !e.target.value.trim()) return;
-  const d = await api(`/search?q=${encodeURIComponent(e.target.value.trim())}&limit=50`);
-  if (!d.nodes.length) { alert("no matches"); return; }
-  d.nodes.forEach(addNode);
-  applyFilters(); relayout();
-  focusNode(d.nodes[0].id);
+  const nodes = await runSearch(e.target.value.trim());
+  if (nodes) focusNode(nodes[0].id);
 });
 
+// the application of tags: click one to surface every asset that shares it
+async function searchTag(tag) {
+  const nodes = await runSearch(tag, 250);
+  if (nodes) document.getElementById("stats").textContent =
+    `${nodes.length} match “${tag}”`;
+}
+
 async function refreshStats() {
-  const d = await api("/digest");
+  const d = await api(`/digest?program=${encodeURIComponent(currentProgram)}`);
   document.getElementById("stats").textContent =
     `${d.total_nodes} nodes · ${d.total_edges} edges · ${d.untriaged} untriaged · ${d.flagged.length} flagged`;
 }
 
-async function init() {
-  buildTypeFilters();
+// --- panels: collapse + resize, persisted to localStorage --------------------
+const LS = { lw: "rm_left_w", rw: "rm_right_w", lc: "rm_left_collapsed", rc: "rm_right_collapsed" };
+
+function setPanelWidth(side, px) {
+  px = Math.max(160, Math.min(560, px));
+  document.documentElement.style.setProperty(side === "left" ? "--left-w" : "--right-w", px + "px");
+  localStorage.setItem(side === "left" ? LS.lw : LS.rw, px);
+}
+
+function togglePanel(side, force) {
+  const panel = document.getElementById(side === "left" ? "left" : "detail");
+  const rez = document.querySelector(`.resizer[data-side="${side}"]`);
+  const tab = document.getElementById(side === "left" ? "leftTab" : "rightTab");
+  const collapsed = typeof force === "boolean"
+    ? panel.classList.toggle("collapsed", force)
+    : panel.classList.toggle("collapsed");
+  rez.style.display = collapsed ? "none" : "";
+  tab.classList.toggle("show", collapsed);
+  localStorage.setItem(side === "left" ? LS.lc : LS.rc, collapsed ? "1" : "0");
+  setTimeout(() => cy.resize(), 60);   // graph reclaims/yields the freed space
+}
+
+function initResizers() {
+  document.querySelectorAll(".resizer").forEach(rz => {
+    rz.addEventListener("mousedown", e => {
+      e.preventDefault();
+      rz.classList.add("dragging");
+      const side = rz.dataset.side;
+      const rect = document.getElementById("content").getBoundingClientRect();
+      const move = ev => setPanelWidth(side,
+        side === "left" ? ev.clientX - rect.left : rect.right - ev.clientX);
+      const up = () => {
+        rz.classList.remove("dragging");
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        cy.resize();
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+  });
+}
+
+function restorePanels() {
+  const lw = localStorage.getItem(LS.lw), rw = localStorage.getItem(LS.rw);
+  if (lw) setPanelWidth("left", +lw);
+  if (rw) setPanelWidth("right", +rw);
+  if (localStorage.getItem(LS.lc) === "1") togglePanel("left", true);
+  if (localStorage.getItem(LS.rc) === "1") togglePanel("right", true);
+}
+
+// --- themes ------------------------------------------------------------------
+function applyTheme(name) {
+  document.documentElement.dataset.theme = name;
+  localStorage.setItem("rm_theme", name);
+  GRAPH_TEXT = GRAPH_TEXT_BY_THEME[name] || "#d7dee8";
+  TYPE_COLORS = paletteFor(name);
+  cy.nodes().forEach(n => n.style({
+    "color": GRAPH_TEXT,
+    "background-color": TYPE_COLORS[n.data("type")] || "#888",
+  }));
+  // recolor the legend swatches to match the active palette
+  document.querySelectorAll("#typeFilters .filter").forEach(f => {
+    const t = f.querySelector("input").dataset.type;
+    f.querySelector(".swatch").style.background = TYPE_COLORS[t];
+  });
+}
+
+function applyFont(key) {
+  GRAPH_FONT = FONTS[key] || FONTS.inter;
+  localStorage.setItem("rm_font", key);
+  document.body.style.fontFamily = GRAPH_FONT;
+  cy.nodes().style("font-family", GRAPH_FONT);
+}
+
+// --- modal dialog (replaces native prompt) -----------------------------------
+// fields: [{name,label,type?:'text'|'select'|'textarea',options?,value?,placeholder?}]
+// resolves to an object of trimmed values, or null if cancelled.
+function openModal({ title, fields, submitLabel = "OK" }) {
+  return new Promise(resolve => {
+    const bg = document.getElementById("modalBg");
+    const form = document.getElementById("modalForm");
+    document.getElementById("modalTitle").textContent = title;
+    form.innerHTML = fields.map(f => {
+      const v = f.value || "";
+      if (f.type === "select")
+        return `<label>${f.label}</label><select name="${f.name}">${f.options.map(o => {
+          const val = o.value ?? o, lab = o.label ?? o;
+          return `<option value="${val}" ${f.value === val ? "selected" : ""}>${lab}</option>`;
+        }).join("")}</select>`;
+      if (f.type === "textarea")
+        return `<label>${f.label}</label><textarea name="${f.name}" placeholder="${f.placeholder || ""}">${v}</textarea>`;
+      return `<label>${f.label}</label><input name="${f.name}" placeholder="${f.placeholder || ""}" value="${v}" />`;
+    }).join("");
+    document.getElementById("modalSubmit").textContent = submitLabel;
+    bg.classList.add("show");
+    const first = form.querySelector("input,select,textarea");
+    if (first) setTimeout(() => first.focus(), 40);
+
+    const done = result => {
+      bg.classList.remove("show");
+      submitBtn.onclick = cancelBtn.onclick = bg.onclick = form.onsubmit = null;
+      resolve(result);
+    };
+    const submit = () => {
+      const data = {};
+      fields.forEach(f => { data[f.name] = (form.querySelector(`[name="${f.name}"]`).value || "").trim(); });
+      done(data);
+    };
+    const submitBtn = document.getElementById("modalSubmit");
+    const cancelBtn = document.getElementById("modalCancel");
+    submitBtn.onclick = submit;
+    cancelBtn.onclick = () => done(null);
+    bg.onclick = e => { if (e.target === bg) done(null); };
+    form.onsubmit = e => { e.preventDefault(); submit(); };
+  });
+}
+
+// --- in-page importer --------------------------------------------------------
+// Paste or upload a tool's output and import it into the current program.
+async function openImport() {
+  const { available } = await api("/importers");
+  const bg = document.getElementById("modalBg");
+  const form = document.getElementById("modalForm");
+  const submitBtn = document.getElementById("modalSubmit");
+  const cancelBtn = document.getElementById("modalCancel");
+  document.getElementById("modalTitle").textContent = `Import into “${currentProgram}”`;
+  submitBtn.textContent = "Import";
+  form.innerHTML = `
+    <label>Importer</label>
+    <select id="impTool">${available.map(t => `<option value="${t}">${t}</option>`).join("")}</select>
+    <label>Paste tool output</label>
+    <textarea id="impData" style="min-height:170px" placeholder="paste httpx / dnsx / nmap / subfinder / … output here"></textarea>
+    <label>…or choose a file</label>
+    <input type="file" id="impFile" />
+    <div class="hint" id="impHint" style="margin-top:6px">
+      Lands in program <b>${currentProgram}</b>. Re-imports are idempotent.</div>`;
+  bg.classList.add("show");
+  setTimeout(() => form.querySelector("#impData").focus(), 40);
+
+  const dataEl = form.querySelector("#impData");
+  const hint = form.querySelector("#impHint");
+  form.querySelector("#impFile").onchange = async e => {
+    const f = e.target.files[0];
+    if (f) { dataEl.value = await f.text(); hint.textContent = `Loaded ${f.name} (${f.size} bytes).`; }
+  };
+  const close = () => {
+    bg.classList.remove("show");
+    submitBtn.onclick = cancelBtn.onclick = bg.onclick = form.onsubmit = null;
+    submitBtn.textContent = "OK";
+  };
+  const doImport = async () => {
+    const tool = form.querySelector("#impTool").value;
+    const data = dataEl.value;
+    if (!data.trim()) { hint.textContent = "Paste some output or choose a file first."; return; }
+    hint.textContent = `Importing ${tool}…`;
+    try {
+      const r = await fetch(`/import/${encodeURIComponent(tool)}?program=${encodeURIComponent(currentProgram)}`,
+        { method: "POST", headers: { "content-type": "text/plain" }, body: data });
+      const res = await r.json();
+      if (!r.ok) { hint.textContent = "Error: " + (res.detail || r.status); return; }
+      hint.innerHTML = `Imported <b>${res.nodes}</b> nodes, <b>${res.edges}</b> edges. Graph updated — import more or close.`;
+      await loadPrograms();
+      await loadGraph();
+    } catch (e) { hint.textContent = "Failed: " + e; }
+  };
+  submitBtn.onclick = doImport;
+  cancelBtn.onclick = close;
+  bg.onclick = e => { if (e.target === bg) close(); };
+  form.onsubmit = e => { e.preventDefault(); doImport(); };
+}
+
+// --- programs (workspaces) ---------------------------------------------------
+async function loadPrograms() {
+  const sel = document.getElementById("programSelect");
+  const { programs } = await api("/programs");
+  const names = programs.map(p => p.program);
+  if (!names.includes(currentProgram)) names.unshift(currentProgram);
+  if (!names.includes("default")) names.unshift("default");
+  sel.innerHTML = [...new Set(names)].map(p =>
+    `<option value="${p}" ${p === currentProgram ? "selected" : ""}>${p}</option>`).join("") +
+    `<option value="__new__">＋ New program…</option>`;
+}
+
+async function switchProgram(name) {
+  currentProgram = name;
+  localStorage.setItem("rm_program", name);
+  cy.elements().remove();
+  for (const k in posCache) delete posCache[k];
+  await loadGraph();
+}
+
+async function onProgramChange() {
+  const sel = document.getElementById("programSelect");
+  if (sel.value === "__new__") {
+    const res = await openModal({ title: "New program / workspace",
+      fields: [{ name: "name", label: "Name", placeholder: "e.g. acme-bbp" }],
+      submitLabel: "Create" });
+    sel.value = currentProgram;
+    if (!res || !res.name) return;
+    await switchProgram(res.name);
+    await loadPrograms();
+  } else {
+    await switchProgram(sel.value);
+  }
+}
+
+// --- bottom toolbar: drag to move + minimize ---------------------------------
+function toggleToolbarMin() { document.getElementById("toolbar").classList.toggle("min"); }
+
+function initToolbarDrag() {
+  const tb = document.getElementById("toolbar");
+  tb.querySelector(".grip").addEventListener("mousedown", e => {
+    e.preventDefault();
+    const cyRect = document.getElementById("cy").getBoundingClientRect();
+    const start = tb.getBoundingClientRect();
+    const offX = e.clientX - start.left, offY = e.clientY - start.top;
+    tb.style.transform = "none";
+    const move = ev => {
+      const x = Math.max(6, Math.min(cyRect.width - tb.offsetWidth - 6, ev.clientX - cyRect.left - offX));
+      const y = Math.max(6, Math.min(cyRect.height - tb.offsetHeight - 6, ev.clientY - cyRect.top - offY));
+      tb.style.left = x + "px"; tb.style.top = y + "px"; tb.style.bottom = "auto";
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+}
+
+// Load the roots for the active program (used at startup and on program switch)
+async function loadGraph() {
   await refreshStats();
-  const d = await api("/roots?limit=100");
+  const center = (() => { const e = cy.extent(); return { x: (e.x1 + e.x2) / 2, y: (e.y1 + e.y2) / 2 }; })();
+  const d = await api(`/roots?limit=100&program=${encodeURIComponent(currentProgram)}`);
   if (!d.nodes.length) {
-    document.getElementById("detail").innerHTML =
-      `<div class="hint">Graph is empty. Import recon output, e.g.<br>
-       <code>rainman import httpx out.jsonl</code></div>`;
+    document.getElementById("detailBody").innerHTML =
+      `<div class="hint">Program <b>${currentProgram}</b> is empty. Click
+       <b>⤓ Import</b> in the header to paste/upload tool output, or run<br>
+       <code>rainman import httpx out.jsonl --program ${currentProgram}</code></div>`;
     return;
   }
-  d.nodes.forEach(addNode);
+  const fresh = [];
+  d.nodes.forEach(n => { const a = addNode(n); if (a) fresh.push(a); });
+  cy.nodes().addClass("root");   // anchors for the collapse logic
+  placeRing(center, fresh);      // collision-free initial spread
   applyFilters();
-  relayout();
+  relayout();                    // one global layout to arrange the roots
+}
+
+async function init() {
+  buildTypeFilters();
+  initResizers();
+  initToolbarDrag();
+  restorePanels();
+  const themeSel = document.getElementById("themeSelect");
+  themeSel.value = savedTheme;
+  themeSel.addEventListener("change", () => applyTheme(themeSel.value));
+  const fontSel = document.getElementById("fontSelect");
+  fontSel.value = localStorage.getItem("rm_font") || "inter";
+  applyFont(fontSel.value);
+  fontSel.addEventListener("change", () => applyFont(fontSel.value));
+  await loadPrograms();
+  document.getElementById("programSelect").addEventListener("change", onProgramChange);
+  await loadGraph();
 }
 init();
 </script>

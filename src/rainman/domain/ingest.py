@@ -38,7 +38,7 @@ class IngestService:
     def __init__(self, repo: GraphRepository) -> None:
         self._repo = repo
 
-    def ingest(self, ops: Iterable[NodeOp | EdgeOp]) -> IngestResult:
+    def ingest(self, ops: Iterable[NodeOp | EdgeOp], program: str = "default") -> IngestResult:
         result = IngestResult()
         # Identity map scoped to this batch: dedupe identical node values so a
         # host mentioned 50 times in one file is upserted once.
@@ -46,6 +46,7 @@ class IngestService:
         seen_edges: set[str] = set()
 
         for op in ops:
+            op.program = program   # stamp the workspace onto every op
             if isinstance(op, NodeOp):
                 key = (op.type.value, op.value)
                 if key in seen_nodes:
@@ -83,6 +84,7 @@ class IngestService:
         note: Optional[str] = None,
         affects: Iterable[str] = (),
         author_type: AuthorType = AuthorType.human,
+        program: str = "default",
     ) -> Node:
         """Create a finding/intuition and link it to the nodes it affects.
 
@@ -93,7 +95,7 @@ class IngestService:
         props = {k: v for k, v in props.items() if v is not None}
         node = self._repo.upsert_node(NodeOp(
             type=NodeType.finding, value=title, source="manual", notes=note,
-            author_type=author_type, confidence=confidence, props=props,
+            author_type=author_type, confidence=confidence, props=props, program=program,
         ))
         for target in affects:
             self._repo.link_nodes(
@@ -108,12 +110,13 @@ class IngestService:
         description: Optional[str] = None,
         members: Iterable[str] = (),
         author_type: AuthorType = AuthorType.human,
+        program: str = "default",
     ) -> Node:
         """Create a user-defined functionality and attach members (endpoints/
         params) to it via ``part_of`` edges (member → functionality)."""
         node = self._repo.upsert_node(NodeOp(
             type=NodeType.functionality, value=name, source="manual",
-            notes=description, author_type=author_type, props={"name": name},
+            notes=description, author_type=author_type, props={"name": name}, program=program,
         ))
         for member in members:
             self._repo.link_nodes(

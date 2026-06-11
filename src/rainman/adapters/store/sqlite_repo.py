@@ -42,11 +42,12 @@ CREATE TABLE IF NOT EXISTS nodes (
     sources     TEXT NOT NULL DEFAULT '[]',
     author_type TEXT NOT NULL DEFAULT 'tool',
     confidence  REAL,
-    props       TEXT NOT NULL DEFAULT '{}'
+    props       TEXT NOT NULL DEFAULT '{}',
+    program     TEXT NOT NULL DEFAULT 'default'
 );
-CREATE INDEX IF NOT EXISTS idx_nodes_type   ON nodes(type);
-CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
-CREATE INDEX IF NOT EXISTS idx_nodes_value  ON nodes(value);
+CREATE INDEX IF NOT EXISTS idx_nodes_type    ON nodes(type);
+CREATE INDEX IF NOT EXISTS idx_nodes_status  ON nodes(status);
+CREATE INDEX IF NOT EXISTS idx_nodes_value   ON nodes(value);
 
 CREATE TABLE IF NOT EXISTS edges (
     id          TEXT PRIMARY KEY,
@@ -56,7 +57,8 @@ CREATE TABLE IF NOT EXISTS edges (
     sources     TEXT NOT NULL DEFAULT '[]',
     first_seen  TEXT NOT NULL,
     author_type TEXT NOT NULL DEFAULT 'tool',
-    props       TEXT NOT NULL DEFAULT '{}'
+    props       TEXT NOT NULL DEFAULT '{}',
+    program     TEXT NOT NULL DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_edges_to   ON edges(to_id);
@@ -93,7 +95,20 @@ class SqliteGraphRepository:
         self._lock = threading.RLock()
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add the program column to pre-existing databases (CREATE TABLE
+        IF NOT EXISTS won't alter an existing table)."""
+        for table in ("nodes", "edges"):
+            cols = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            if "program" not in cols:
+                self._conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN program TEXT NOT NULL DEFAULT 'default'"
+                )
+        # index created after the column exists (works for both new and migrated DBs)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_program ON nodes(program)")
 
     def close(self) -> None:
         self._conn.close()
@@ -114,6 +129,7 @@ class SqliteGraphRepository:
             author_type=AuthorType(r["author_type"]),
             confidence=r["confidence"],
             props=json.loads(r["props"]),
+            program=r["program"],
         )
 
     @staticmethod
@@ -127,26 +143,27 @@ class SqliteGraphRepository:
             first_seen=_parse_dt(r["first_seen"]),
             author_type=AuthorType(r["author_type"]),
             props=json.loads(r["props"]),
+            program=r["program"],
         )
 
     def _write_node(self, n: Node) -> None:
         self._conn.execute(
             """INSERT OR REPLACE INTO nodes
                (id,type,value,status,tags,notes,first_seen,last_seen,
-                sources,author_type,confidence,props)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                sources,author_type,confidence,props,program)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 n.id, n.type.value, n.value, n.status.value,
                 json.dumps(n.tags), n.notes, _iso(n.first_seen), _iso(n.last_seen),
                 json.dumps(n.sources), n.author_type.value, n.confidence,
-                json.dumps(n.props),
+                json.dumps(n.props), n.program,
             ),
         )
 
     # -- GraphRepository port ---------------------------------------------
     @_locked
     def upsert_node(self, op: NodeOp) -> Node:
-        node_id = make_id(op.type, op.value)
+        node_id = make_id(op.type, op.value, op.program)
         existing = self.get_node(node_id)
         if existing is None:
             node = Node(
@@ -160,6 +177,7 @@ class SqliteGraphRepository:
                 author_type=op.author_type,
                 confidence=op.confidence,
                 props=dict(op.props),
+                program=op.program,
             )
         else:
             node = merge_node(existing, op, node_id)
@@ -169,10 +187,10 @@ class SqliteGraphRepository:
 
     @_locked
     def upsert_edge(self, op: EdgeOp) -> Edge:
-        from_id = make_id(op.from_value_type, op.from_value)
-        to_id = make_id(op.to_value_type, op.to_value)
+        from_id = make_id(op.from_value_type, op.from_value, op.program)
+        to_id = make_id(op.to_value_type, op.to_value, op.program)
         return self._upsert_edge(
-            op.type, from_id, to_id, op.source, op.author_type, op.props
+            op.type, from_id, to_id, op.source, op.author_type, op.props, op.program
         )
 
     @_locked
@@ -187,10 +205,15 @@ class SqliteGraphRepository:
         props: Optional[dict] = None,
     ) -> Optional[Edge]:
         """Editor/agent edge creation by existing node id. Both endpoints must
-        already exist; returns None if either is missing."""
-        if self.get_node(from_id) is None or self.get_node(to_id) is None:
+        already exist; returns None if either is missing. The edge inherits the
+        program of its endpoints."""
+        a = self.get_node(from_id)
+        b = self.get_node(to_id)
+        if a is None or b is None:
             return None
-        return self._upsert_edge(edge_type, from_id, to_id, source, author_type, props or {})
+        return self._upsert_edge(
+            edge_type, from_id, to_id, source, author_type, props or {}, a.program
+        )
 
     def _upsert_edge(
         self,
@@ -200,6 +223,7 @@ class SqliteGraphRepository:
         source: str,
         author_type: AuthorType,
         props: dict,
+        program: str = "default",
     ) -> Edge:
         edge_id = f"edge:{edge_type.value}:{from_id}:{to_id}"
         row = self._conn.execute("SELECT * FROM edges WHERE id=?", (edge_id,)).fetchone()
@@ -207,7 +231,7 @@ class SqliteGraphRepository:
             edge = Edge(
                 id=edge_id, type=edge_type, from_id=from_id, to_id=to_id,
                 sources=[source] if source else [],
-                author_type=author_type, props=dict(props),
+                author_type=author_type, props=dict(props), program=program,
             )
         else:
             edge = self._row_to_edge(row)
@@ -215,12 +239,12 @@ class SqliteGraphRepository:
             edge.props = {**edge.props, **props}
         self._conn.execute(
             """INSERT OR REPLACE INTO edges
-               (id,type,from_id,to_id,sources,first_seen,author_type,props)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               (id,type,from_id,to_id,sources,first_seen,author_type,props,program)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
                 edge.id, edge.type.value, edge.from_id, edge.to_id,
                 json.dumps(edge.sources), _iso(edge.first_seen),
-                edge.author_type.value, json.dumps(edge.props),
+                edge.author_type.value, json.dumps(edge.props), edge.program,
             ),
         )
         self._conn.commit()
@@ -300,59 +324,86 @@ class SqliteGraphRepository:
         *,
         type: Optional[str] = None,
         status: Optional[str] = None,
+        program: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Node]:
-        sql = "SELECT * FROM nodes WHERE (value LIKE ? OR notes LIKE ?)"
-        args: list = [f"%{query}%", f"%{query}%"]
+        # tags are stored as a JSON array string, so a LIKE on the raw text
+        # matches a tag substring (good enough for the search box).
+        sql = "SELECT * FROM nodes WHERE (value LIKE ? OR notes LIKE ? OR tags LIKE ?)"
+        args: list = [f"%{query}%", f"%{query}%", f"%{query}%"]
         if type:
             sql += " AND type=?"
             args.append(type)
         if status:
             sql += " AND status=?"
             args.append(status)
+        if program:
+            sql += " AND program=?"
+            args.append(program)
         sql += " ORDER BY last_seen DESC LIMIT ? OFFSET ?"
         args.extend([limit, offset])
         return [self._row_to_node(r) for r in self._conn.execute(sql, args).fetchall()]
 
     @_locked
-    def roots(self, limit: int = 100) -> list[Node]:
+    def roots(self, limit: int = 100, program: Optional[str] = None) -> list[Node]:
         """Entry-point nodes for the graph view: programs + domains, falling
         back to subdomains when no apex/program nodes exist yet."""
+        pclause = " AND program=?" if program else ""
+        pargs = (program,) if program else ()
         rows = self._conn.execute(
-            "SELECT * FROM nodes WHERE type IN ('program','domain') "
-            "ORDER BY type, value LIMIT ?",
-            (limit,),
+            "SELECT * FROM nodes WHERE type IN ('program','domain')" + pclause
+            + " ORDER BY type, value LIMIT ?",
+            (*pargs, limit),
         ).fetchall()
         if not rows:
             rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE type='subdomain' "
-                "ORDER BY last_seen DESC LIMIT ?",
-                (limit,),
+                "SELECT * FROM nodes WHERE type='subdomain'" + pclause
+                + " ORDER BY last_seen DESC LIMIT ?",
+                (*pargs, limit),
             ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     @_locked
-    def digest(self) -> dict:
+    def programs(self) -> list[dict]:
+        """Distinct programs with node counts (for the workspace switcher)."""
+        return [
+            {"program": r["program"], "nodes": r["c"]}
+            for r in self._conn.execute(
+                "SELECT program, COUNT(*) c FROM nodes GROUP BY program ORDER BY program"
+            )
+        ]
+
+    @_locked
+    def digest(self, program: Optional[str] = None) -> dict:
+        # optional "program=?" predicate appended to each count query
+        pc = " AND program=?" if program else ""
+        pw = " WHERE program=?" if program else ""
+        pa = (program,) if program else ()
         by_type = {
             r["type"]: r["c"]
-            for r in self._conn.execute("SELECT type, COUNT(*) c FROM nodes GROUP BY type")
+            for r in self._conn.execute(
+                "SELECT type, COUNT(*) c FROM nodes" + pw + " GROUP BY type", pa)
         }
         by_status = {
             r["status"]: r["c"]
-            for r in self._conn.execute("SELECT status, COUNT(*) c FROM nodes GROUP BY status")
+            for r in self._conn.execute(
+                "SELECT status, COUNT(*) c FROM nodes" + pw + " GROUP BY status", pa)
         }
         flagged = [
             self._row_to_node(r)
             for r in self._conn.execute(
-                "SELECT * FROM nodes WHERE status=? ORDER BY last_seen DESC LIMIT 50",
-                (Status.flagged.value,),
+                "SELECT * FROM nodes WHERE status=?" + pc
+                + " ORDER BY last_seen DESC LIMIT 50",
+                (Status.flagged.value, *pa),
             ).fetchall()
         ]
         untriaged = self._conn.execute(
-            "SELECT COUNT(*) c FROM nodes WHERE status=?", (Status.untriaged.value,)
+            "SELECT COUNT(*) c FROM nodes WHERE status=?" + pc,
+            (Status.untriaged.value, *pa),
         ).fetchone()["c"]
-        total_edges = self._conn.execute("SELECT COUNT(*) c FROM edges").fetchone()["c"]
+        total_edges = self._conn.execute(
+            "SELECT COUNT(*) c FROM edges" + pw, pa).fetchone()["c"]
         return {
             "nodes_by_type": by_type,
             "nodes_by_status": by_status,
