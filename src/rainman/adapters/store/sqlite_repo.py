@@ -276,6 +276,7 @@ class SqliteGraphRepository:
         status: Optional[str] = None,
         notes: Optional[str] = None,
         add_tags: Optional[Iterable[str]] = None,
+        set_tags: Optional[Iterable[str]] = None,
         props: Optional[dict] = None,
     ) -> Optional[Node]:
         node = self.get_node(node_id)
@@ -285,7 +286,9 @@ class SqliteGraphRepository:
             node.status = Status(status)
         if notes is not None:
             node.notes = notes
-        if add_tags:
+        if set_tags is not None:          # authoritative replace (enables removal)
+            node.tags = sorted(set(set_tags))
+        elif add_tags:
             node.tags = sorted(set(node.tags) | set(add_tags))
         if props:
             node.props = {**node.props, **props}

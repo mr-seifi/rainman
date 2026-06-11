@@ -86,6 +86,18 @@ def test_bulk_status_skips_illegal_and_missing():
     assert "triaged" in c.get("/node", params={"id": EP_USERS}).json()["node"]["tags"]
 
 
+def test_set_tags_replaces_and_can_remove():
+    c = seeded_client()
+    c.patch("/node", params={"id": EP_USERS}, json={"add_tags": ["a", "b", "c"]})
+    assert set(c.get("/node", params={"id": EP_USERS}).json()["node"]["tags"]) == {"a", "b", "c"}
+    # set_tags is authoritative — removes b and c
+    c.patch("/node", params={"id": EP_USERS}, json={"set_tags": ["a"]})
+    assert c.get("/node", params={"id": EP_USERS}).json()["node"]["tags"] == ["a"]
+    # empty set_tags clears all
+    c.patch("/node", params={"id": EP_USERS}, json={"set_tags": []})
+    assert c.get("/node", params={"id": EP_USERS}).json()["node"]["tags"] == []
+
+
 def test_bulk_tag_only_without_status():
     c = seeded_client()
     r = c.post("/bulk/status", json={"ids": [EP_USERS, EP_LOGIN], "add_tags": ["review"]})

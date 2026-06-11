@@ -65,6 +65,7 @@ class NodePatch(BaseModel):
     status: Optional[Status] = None
     notes: Optional[str] = None
     add_tags: list[str] = []
+    set_tags: Optional[list[str]] = None
     props: dict = {}
 
 
@@ -218,6 +219,7 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
             status=patch.status.value if patch.status else None,
             notes=patch.notes,
             add_tags=patch.add_tags or None,
+            set_tags=patch.set_tags,
             props=patch.props or None,
         )
         return {"node": node_to_dict(updated)}

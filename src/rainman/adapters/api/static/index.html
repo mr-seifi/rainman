@@ -11,8 +11,8 @@
 <style>
   /* themes — set on <html data-theme>; default (no attr) = midnight */
   :root, :root[data-theme="midnight"] {
-    --bg: #0e1116; --title: #ffffff; --panel: #161b22; --line: #2a3340; --fg: #d7dee8;
-    --muted: #8b97a7; --accent: #4f9dff;
+    --bg: #0D0F10; --title: #ffffff; --panel: #111416; --line: #1E2530; --fg: #E8EDF2;
+    --muted: #8B95A1; --accent: #22FF8F;
   }
   :root[data-theme="nord"] {
     --bg: #2e3440; --title: #f4f7fc; --panel: #3b4252; --line: #4c566a; --fg: #e5e9f0;
@@ -44,7 +44,13 @@
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     background: var(--bg); color: var(--fg); }
   code, .mono { font-family: "JetBrains Mono", ui-monospace, "SF Mono", monospace; }
-  :root { --left-w: 230px; --right-w: 340px; }
+  :root { --left-w: 230px; --right-w: 340px;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+    /* derived elevation/border/dim — adapt to whatever theme is active */
+    --bg2: color-mix(in srgb, var(--panel) 78%, var(--line));
+    --bg3: color-mix(in srgb, var(--panel) 50%, var(--line));
+    --border-hi: color-mix(in srgb, var(--line) 60%, var(--muted));
+    --text-dim: color-mix(in srgb, var(--muted) 60%, var(--bg)); }
   #app { display: flex; flex-direction: column; height: 100vh; }
   header { height: 50px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 14px;
     background: linear-gradient(180deg, #1b212b, var(--panel));
@@ -53,7 +59,8 @@
   header h1 span { color: var(--accent); }
   .icon { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center;
     justify-content: center; background-color: var(--panel); color: var(--muted);
-    border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 15px; line-height: 1;
+    border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 18px;
+    font-weight: 800; line-height: 1;
     transition: transform .1s, color .15s, border-color .15s, background-color .15s;
     box-shadow: 0 1px 2px rgba(0,0,0,.25); }
   .icon:hover { color: var(--fg); border-color: var(--accent);
@@ -75,7 +82,7 @@
     border-bottom: 1px solid var(--line); }
   .panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: .9px;
     color: var(--title); font-weight: 700; }
-  .panel-head .icon { margin-left: auto; width: 24px; height: 24px; font-size: 12px; }
+  .panel-head .icon { margin-left: auto; width: 24px; height: 24px; font-size: 15px; }
   .panel-body { padding: 12px; }
   #cy { flex: 1; min-width: 0; position: relative; background:
     radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--panel) 45%, var(--bg)), var(--bg)); }
@@ -137,10 +144,12 @@
   .btn:hover { border-color: var(--accent); background-color: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
   .btn:active { transform: translateY(1px); box-shadow: none; }
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .btn.primary { color: #04111f; font-weight: 600; border-color: transparent;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, white), var(--accent));
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
-  .btn.primary:hover { background: var(--accent); }
+  .btn.primary { color: var(--accent); font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+    box-shadow: none; }
+  .btn.primary:hover { background: color-mix(in srgb, var(--accent) 26%, var(--panel));
+    border-color: var(--accent); }
   .btn.danger:hover { border-color: #ff5370; color: #ff5370;
     background-color: color-mix(in srgb, #ff5370 12%, var(--panel)); }
   .btn.hunt.on { font-weight: 600; }
@@ -157,7 +166,7 @@
   #toolbar.show { display: flex; }
   #toolbar.min > :not(.grip):not(.count):not(.minBtn):not(.lbl) { display: none; }
   #toolbar .grip { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none;
-    letter-spacing: -2px; }
+    letter-spacing: -2px; font-size: 16px; font-weight: 800; }
   #toolbar .grip:active { cursor: grabbing; }
   #toolbar .count { color: var(--accent); font-weight: 700; }
   #toolbar .lbl { color: var(--muted); }
@@ -186,6 +195,109 @@
     outline: none; border-color: var(--accent); }
   .modal .actions { display: flex; justify-content: flex-end; gap: 8px;
     padding: 13px 18px; border-top: 1px solid var(--line); }
+
+  /* ===== design kit components ===== */
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  /* node-type badge (color comes inline from the type palette) */
+  .node-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px;
+    border-radius: 6px; font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px; font-weight: 500; border: 1px solid; }
+  .node-badge .bdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  /* status chip (pill) */
+  .status-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+    border-radius: 20px; font-size: 11px; font-weight: 500; border: 1px solid;
+    font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .status-chip .bdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  /* severity chip */
+  .sev { padding: 2px 9px; border-radius: 6px; font-size: 10px; font-weight: 700;
+    letter-spacing: .05em; text-transform: uppercase; border: 1px solid;
+    font-family: "JetBrains Mono", ui-monospace, monospace; }
+  /* source attribution pill */
+  .source-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px;
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9px; color: var(--text-dim); }
+  .source-pill .sdot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .8; }
+  /* key/value rows in the detail card */
+  .kvr { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    font-size: 11px; padding: 5px 0; border-top: 1px solid var(--line); }
+  .kvr .k { color: var(--text-dim); }
+  .kvr .v { font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--muted);
+    text-align: right; word-break: break-all; }
+  .card-title { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px;
+    font-weight: 600; color: var(--title); word-break: break-all; }
+  .card-sub { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px;
+    color: var(--text-dim); margin-top: 2px; word-break: break-all; }
+  /* endpoint list */
+  .ep-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid transparent; cursor: pointer; }
+  .ep-row:hover { border-color: var(--border-hi); background: var(--bg3); }
+  .ep-method { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px;
+    font-weight: 700; width: 44px; text-align: center; border-radius: 3px; padding: 2px 0; }
+  .m-GET { color: #22FF8F; background: rgba(34,255,143,.10); }
+  .m-POST { color: #F5B942; background: rgba(245,185,66,.10); }
+  .m-PUT { color: #4A9EFF; background: rgba(74,158,255,.10); }
+  .m-DELETE { color: #F05656; background: rgba(240,86,86,.10); }
+  .m-OTHER { color: var(--muted); background: var(--bg3); }
+  .ep-path { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px;
+    color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ep-status { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px;
+    font-weight: 600; width: 30px; text-align: right; }
+  .s2 { color: #22FF8F; } .s3 { color: #4A9EFF; } .s4 { color: #FF6B35; } .s5 { color: #F05656; }
+  .endpoint-list { display: flex; flex-direction: column; gap: 2px; }
+  .ep-len { font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+    width: 54px; text-align: right; }
+  /* digest widget */
+  .digest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .digest-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; }
+  .digest-count { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 20px;
+    font-weight: 600; color: var(--title); }
+  .digest-label { font-size: 10px; color: var(--text-dim);
+    font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .digest-card.flagged .digest-count { color: #FF6B35; }
+  .digest-card.confirmed .digest-count { color: #F05656; }
+  .author-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+    border-radius: 3px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9px;
+    color: var(--text-dim); background: var(--bg3); }
+
+  /* ===== custom dropdown (replaces the native <select> list) ===== */
+  .cs { position: relative; width: 100%; margin-bottom: 10px; }
+  .cs.cs-hdr { width: auto; margin: 0; }
+  .cs select { display: none !important; }
+  .cs-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 7px 11px; font: inherit; color: var(--fg); background-color: var(--panel);
+    border: 1px solid var(--line); border-radius: 9px; cursor: pointer; text-align: left;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: border-color .15s; }
+  .cs-btn:hover { border-color: var(--accent); }
+  .cs-hdr .cs-btn { min-width: 116px; }
+  .cs-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cs-chev { color: var(--muted); font-size: 9px; flex: none; }
+  #toolbar .cs { width: auto; margin: 0; }
+  .modal .cs-btn { background-color: var(--bg); }
+  .cs-menu { position: fixed; z-index: 80; padding: 5px; min-width: 150px; max-height: 320px;
+    overflow-y: auto; background: var(--panel); border: 1px solid var(--border-hi);
+    border-radius: 10px; box-shadow: 0 18px 46px rgba(0,0,0,.6);
+    animation: csIn .1s ease; }
+  @keyframes csIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .cs-opt { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 7px;
+    cursor: pointer; color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .cs-opt:hover { background: var(--bg3); color: var(--fg); }
+  .cs-opt.sel { color: var(--accent); }
+  .cs-opt::before { content: ""; width: 12px; flex: none; color: var(--accent); }
+  .cs-opt.sel::before { content: "✓"; }
+
+  /* toast notifications (replace native alert) */
+  #toastWrap { position: fixed; right: 16px; bottom: 16px; z-index: 95;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .toast { max-width: 340px; padding: 10px 14px; border-radius: 10px; font-size: 12px;
+    line-height: 1.5; background: var(--panel); color: var(--fg); border: 1px solid var(--border-hi);
+    box-shadow: 0 14px 38px rgba(0,0,0,.55); animation: toastIn .18s ease; }
+  .toast.error { border-color: color-mix(in srgb, #F05656 55%, var(--line)); }
+  .toast.error::before { content: "⚠ "; color: #F05656; }
+  .toast.ok { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+  .toast.out { opacity: 0; transform: translateX(10px); transition: .25s; }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+  .modal-msg { font-size: 13px; color: var(--fg); line-height: 1.6; padding: 2px 0; }
 </style>
 </head>
 <body>
@@ -224,6 +336,7 @@
         <div id="typeFilters"></div>
         <h2 style="margin-top:16px">Status</h2>
         <select id="statusFilter"><option value="">all statuses</option></select>
+        <div id="tagFilterRow" class="chips"></div>
         <h2 style="margin-top:16px">Legend</h2>
         <div class="hint">Border = status · size = type. Click a node to toggle
           its 1-hop neighborhood. Box-select for bulk actions.</div>
@@ -275,11 +388,12 @@
 </div>
 
 <script>
+// node type colors — from the design kit
 const TYPE_COLORS_DEFAULT = {
-  program: "#c792ea", domain: "#82aaff", subdomain: "#4f9dff", ip: "#f78c6c",
-  asn: "#ffcb6b", service: "#f07178", endpoint: "#c3e88d", parameter: "#89ddff",
-  technology: "#b2ccd6", certificate: "#7fdbca", finding: "#ff5370",
-  functionality: "#d7aefb",
+  program: "#22FF8F", domain: "#60A8FF", subdomain: "#4A9EFF", ip: "#F5B942",
+  asn: "#C8A840", service: "#3ECFA0", endpoint: "#8B7CF8", parameter: "#B09EFA",
+  technology: "#E07070", certificate: "#5ABCEF", finding: "#F05656",
+  functionality: "#FF6B35",
 };
 // hacking mode: a spread across lime → emerald → teal so types stay
 // distinguishable while keeping the green/black aesthetic
@@ -291,10 +405,18 @@ const TYPE_COLORS_HACKING = {
 };
 const paletteFor = name => (name === "hacking" ? TYPE_COLORS_HACKING : TYPE_COLORS_DEFAULT);
 let TYPE_COLORS = TYPE_COLORS_DEFAULT;   // active palette, swapped by theme
+// triage status colors — from the design kit (border = status on graph)
 const STATUS_COLORS = {
-  untriaged: "#56606e", in_scope: "#4f9dff", testing: "#ffcb6b", flagged: "#ff5370",
-  confirmed: "#ff2d55", done: "#22c55e", ignored: "#3a414b", out_of_scope: "#3a414b",
+  untriaged: "#8B95A1", in_scope: "#22FF8F", testing: "#4A9EFF", flagged: "#FF6B35",
+  confirmed: "#F05656", done: "#6070A0", ignored: "#404555", out_of_scope: "#404555",
 };
+// edge line colors by type (kit); unlisted fall back to the muted line
+const EDGE_COLORS = {
+  resolves_to: "#22FF8F", subdomain_of: "#22FF8F", runs_service: "#4A9EFF",
+  has_endpoint: "#8B7CF8", has_param: "#B09EFA", affects: "#F05656",
+  part_of: "#FF6B35", announced_by: "#F5B942", uses_tech: "#E07070",
+};
+const EDGE_DASHED = new Set(["cname_to", "shares_cert"]);
 // node diameter by type — apex domains read as the largest hubs, params smallest
 const SIZE = {
   program: 38, domain: 30, functionality: 26, asn: 24, ip: 22, subdomain: 18,
@@ -332,11 +454,12 @@ const EDGE_TYPES = ["part_of", "affects", "resolves_to", "cname_to", "has_endpoi
   "has_param", "uses_tech", "runs_service", "shares_cert", "subdomain_of", "announced_by"];
 const activeTypes = new Set(NODE_TYPES);
 let statusFilter = "";
+let tagFilter = null;   // active tag filter (set by clicking a tag chip)
 const posCache = {};   // id → {x,y}, remembered across collapse so toggling keeps layout
 
 // graph label color per theme (chrome colors live in CSS [data-theme] blocks)
 const GRAPH_TEXT_BY_THEME = {
-  midnight: "#d7dee8", nord: "#e5e9f0", slate: "#dde3f0", rose: "#f0e4ee",
+  midnight: "#E8EDF2", nord: "#e5e9f0", slate: "#dde3f0", rose: "#f0e4ee",
   light: "#1c2430", hacking: "#2bff88",
 };
 const savedTheme = localStorage.getItem("rm_theme") || "midnight";
@@ -387,13 +510,17 @@ const cy = cytoscape({
     { selector: "node.expanded", style: {
         "underlay-color": "#4f9dff", "underlay-opacity": 0.18, "underlay-padding": 6 } },
     { selector: "edge", style: {
-        "width": 1, "line-color": "#39414d", "target-arrow-color": "#39414d",
+        "width": 1.2,
+        "line-color": ele => EDGE_COLORS[ele.data("type")] || "#39414d",
+        "line-opacity": 0.5,
+        "target-arrow-color": ele => EDGE_COLORS[ele.data("type")] || "#39414d",
         "target-arrow-shape": "triangle", "arrow-scale": 0.7,
+        "line-style": ele => EDGE_DASHED.has(ele.data("type")) ? "dashed" : "solid",
         "curve-style": "bezier" } },
     // edge type label only on the selected edge — keeps the canvas cheap.
     { selector: "edge:selected", style: {
         "label": "data(type)", "font-size": 7, "color": "#9fb0c3",
-        "text-rotation": "autorotate", "line-color": "#5a6675", "width": 2 } },
+        "text-rotation": "autorotate", "line-opacity": 1, "width": 2.4 } },
     { selector: ".hidden", style: { "display": "none" } },
   ],
 });
@@ -410,7 +537,7 @@ function addNode(n, position) {
   const ex = cy.getElementById(n.id);
   if (ex.length) { ex.data({ status: n.status }); return null; }
   const node = cy.add({ group: "nodes", position, data: {
-    id: n.id, label: n.value, type: n.type, status: n.status,
+    id: n.id, label: n.value, type: n.type, status: n.status, tags: n.tags || [],
     hunt: (n.props && n.props.hunt) || "not_worked", raw: n } });
   node.style({ "color": GRAPH_TEXT, "font-family": GRAPH_FONT });   // active theme + font
   return node;
@@ -508,49 +635,94 @@ function collapse(node) {
 
 let current = null;  // id shown in the editable detail panel
 
+// --- design-kit render helpers ---
+const SEV_COLORS = { info: "#5ABCEF", low: "#3ECFA0", medium: "#F5B942", high: "#FF6B35", critical: "#F05656" };
+const tint = c => `color:${c};background:color-mix(in srgb, ${c} 13%, var(--panel));border-color:color-mix(in srgb, ${c} 38%, var(--line))`;
+const typeBadge = t => { const c = TYPE_COLORS[t] || "#888";
+  return `<span class="node-badge" style="${tint(c)}"><span class="bdot" style="background:${c}"></span>${t}</span>`; };
+const statusChip = s => { const c = STATUS_COLORS[s] || "#888";
+  return `<span class="status-chip" style="${tint(c)}"><span class="bdot" style="background:${c}"></span>${s}</span>`; };
+const sevChip = s => `<span class="sev" style="${tint(SEV_COLORS[s] || "#8B95A1")}">${s}</span>`;
+const sourcePills = ss => (ss || []).map(s => `<span class="source-pill"><span class="sdot"></span>${escapeHtml(s)}</span>`).join("");
+const methodClass = m => ["GET", "POST", "PUT", "DELETE"].includes(m) ? m : "OTHER";
+const statusClass = c => c ? "s" + String(c)[0] : "";
+const epPath = v => { const i = v.indexOf("/"); return i < 0 ? "/" : v.slice(i); };
+const fmtLen = n => n == null ? "" : (+n < 1024 ? +n + " B" : (+n / 1024).toFixed(1) + " KB");
+function epRow(x) {
+  const m = (x.props.method || "GET").toUpperCase(), code = x.props.status_code;
+  return `<div class="ep-row" onclick="focusNode('${x.id}')">
+    <span class="ep-method m-${methodClass(m)}">${m}</span>
+    <span class="ep-path">${escapeHtml(epPath(x.value))}</span>
+    <span class="ep-status ${statusClass(code)}">${code ?? ""}</span>
+    <span class="ep-len">${fmtLen(x.props.content_length)}</span></div>`;
+}
+
 async function showDetail(id) {
   current = id;
   const d = await api(`/node?id=${encodeURIComponent(id)}`);
   const n = d.node, p = n.props || {};
   const statusOpts = [n.status, ...(TRANSITIONS[n.status] || [])]
     .map(s => `<option value="${s}" ${s === n.status ? "selected" : ""}>${s}</option>`).join("");
-  const propRows = Object.entries(p).filter(([k, v]) => v !== null && v !== "" && k !== "hunt")
-    .map(([k, v]) => `<div>${k}</div><div>${escapeHtml(JSON.stringify(v))}</div>`).join("");
-  const hunt = p.hunt || "not_worked";   // default state
+  const kv = Object.entries(p).filter(([k, v]) => v !== null && v !== "" && k !== "hunt")
+    .map(([k, v]) => `<div class="kvr"><span class="k">${k}</span><span class="v">${
+      escapeHtml(typeof v === "object" ? JSON.stringify(v) : String(v))}</span></div>`).join("");
+  const hunt = p.hunt || "not_worked";
   const huntBtns = Object.entries(HUNT).map(([k, h]) =>
     `<button class="btn hunt ${hunt === k ? "on" : ""}" style="${hunt === k ? `border-color:${h.color};color:${h.color}` : ""}"
        onclick="setHunt('${k}')">${h.label}</button>`).join("");
-  const neighbors = d.neighbors.map(x => `
-    <div class="nb" onclick="focusNode('${x.id}')">
-      <span>${escapeHtml(x.value)}</span><small>${x.type}</small></div>`).join("") ||
-    `<div class="hint">No neighbors loaded.</div>`;
+  const eps = d.neighbors.filter(x => x.type === "endpoint");
+  const others = d.neighbors.filter(x => x.type !== "endpoint");
+  const sev = (n.type === "finding" && p.severity) ? sevChip(p.severity) : "";
+  const author = n.author_type === "agent"
+    ? `<span class="author-tag">🤖 agent${n.confidence != null ? ` · ${n.confidence}` : ""}</span>` : "";
   document.getElementById("detailBody").innerHTML = `
-    <h2>${n.type}</h2>
-    <div><code>${escapeHtml(n.value)}</code></div>
-    <div class="kv">
-      <div>sources</div><div>${(n.sources||[]).join(", ") || "—"}</div>
-      <div>author</div><div>${n.author_type}${n.confidence != null ? ` · conf ${n.confidence}` : ""}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      ${typeBadge(n.type)} ${sev}
+      <span style="margin-left:auto">${statusChip(n.status)}</span>
     </div>
-    <h2>Status</h2>
+    <div class="card-title" style="margin-top:11px">${escapeHtml(n.value)}</div>
+    <div class="card-sub">${escapeHtml(n.id)}</div>
+    ${kv ? `<div style="margin-top:8px">${kv}</div>` : ""}
+    ${(n.sources || []).length || author ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:11px">
+      ${sourcePills(n.sources)}${author}</div>` : ""}
+    <h2 style="margin-top:15px">Status</h2>
     <select id="edStatus">${statusOpts}</select>
     <h2>Hunt</h2>
     <div class="row">${huntBtns}</div>
     <h2>Tags</h2>
-    ${(n.tags||[]).length ? `<div class="chips">${n.tags.map(t =>
-      `<span class="chip" onclick="searchTag(this.textContent)" title="Pull in everything tagged this">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
-    <input id="edTags" value="${escapeHtml((n.tags||[]).join(', '))}" placeholder="add tags, comma-separated" />
-    <div class="hint" style="margin:-4px 0 4px">Click a tag to find every asset sharing it.</div>
+    ${(n.tags || []).length ? `<div class="chips">${n.tags.map(t =>
+      `<span class="chip" onclick="filterByTag(this.textContent)" title="Show only elements with this tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+    <input id="edTags" value="${escapeHtml((n.tags || []).join(', '))}" placeholder="add tags, comma-separated" />
+    <div class="hint" style="margin:-4px 0 4px">Click a tag to show only elements with it · edit the box to add/remove.</div>
     <h2>Notes</h2>
     <textarea id="edNotes" placeholder="your notes…">${escapeHtml(n.notes || "")}</textarea>
     <div class="row">
       <button class="btn primary" onclick="saveNode()">Save</button>
       <button class="btn danger" onclick="deleteNode()">Delete</button>
+      ${n.type !== "finding" ? `<button class="btn" onclick="addFindingHere()">＋ finding</button>` : ""}
     </div>
-    ${n.type !== "finding" ? `<div class="row" style="margin-top:6px">
-      <button class="btn" onclick="addFindingHere()">＋ finding on this asset</button>
-    </div>` : ""}
-    ${propRows ? `<h2>Props</h2><div class="kv">${propRows}</div>` : ""}
-    <h2>Neighbors (${d.neighbors.length})</h2>${neighbors}`;
+    ${eps.length ? `<h2>Endpoints (${eps.length})</h2><div class="endpoint-list">${eps.map(epRow).join("")}</div>` : ""}
+    ${others.length ? `<h2>Neighbors (${others.length})</h2>${others.map(x =>
+      `<div class="nb" onclick="focusNode('${x.id}')"><span>${escapeHtml(x.value)}</span><small>${x.type}</small></div>`).join("")}` : ""}`;
+  enhanceSelects(document.getElementById("detailBody"));
+}
+
+// Idle panel: attack-surface digest for the active program
+async function showDigest() {
+  current = null;
+  const d = await api(`/digest?program=${encodeURIComponent(currentProgram)}`);
+  const t = d.nodes_by_type || {}, s = d.nodes_by_status || {};
+  const card = (val, label, cls = "") =>
+    `<div class="digest-card ${cls}"><div class="digest-count">${(val || 0).toLocaleString()}</div><div class="digest-label">${label}</div></div>`;
+  document.getElementById("detailBody").innerHTML = `
+    <h2>Digest · ${escapeHtml(currentProgram)}</h2>
+    <div class="digest-grid">
+      ${card(t.subdomain, "subdomains")}${card(t.endpoint, "endpoints")}
+      ${card(t.ip, "ips")}${card(t.service, "services")}
+      ${card(t.parameter, "parameters")}${card(t.technology, "technologies")}
+      ${card(s.flagged, "flagged", "flagged")}${card(s.confirmed, "confirmed", "confirmed")}
+    </div>
+    <div class="hint" style="margin-top:11px">Click a node to inspect &amp; edit it · ⤓ Import to add data.</div>`;
 }
 
 async function saveNode() {
@@ -559,12 +731,13 @@ async function saveNode() {
   const tags = document.getElementById("edTags").value.split(",").map(s => s.trim()).filter(Boolean);
   const notes = document.getElementById("edNotes").value;
   const orig = cy.getElementById(current).data("status");
-  const body = { notes, add_tags: tags };
+  // set_tags is authoritative — sending the full edited list lets you remove tags
+  const body = { notes, set_tags: tags };
   if (status !== orig) body.status = status;
   const r = await fetch(`/node?id=${encodeURIComponent(current)}`,
     { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) { alert(`save failed: ${(await r.json()).detail || r.status}`); return; }
-  cy.getElementById(current).data({ status });
+  if (!r.ok) { toast(`Save failed: ${(await r.json()).detail || r.status}`, "error"); return; }
+  cy.getElementById(current).data({ status, tags });
   applyFilters(); refreshStats(); showDetail(current);
 }
 
@@ -575,17 +748,18 @@ async function setHunt(value) {
   const r = await fetch(`/node?id=${encodeURIComponent(current)}`,
     { method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify({ props: { hunt: value } }) });
-  if (!r.ok) { alert(`hunt update failed: ${(await r.json()).detail || r.status}`); return; }
+  if (!r.ok) { toast(`Hunt update failed: ${(await r.json()).detail || r.status}`, "error"); return; }
   cy.getElementById(current).data("hunt", value);
   showDetail(current);   // refresh the active-button highlight
 }
 
 async function deleteNode() {
-  if (!current || !confirm(`Delete ${current}?`)) return;
+  if (!current) return;
+  if (!(await confirmDialog(`Delete ${current}? This also removes its edges.`,
+    { okLabel: "Delete", danger: true }))) return;
   await fetch(`/node?id=${encodeURIComponent(current)}`, { method: "DELETE" });
   cy.getElementById(current).remove();
-  document.getElementById("detailBody").innerHTML = `<div class="hint">Node deleted.</div>`;
-  current = null; refreshStats();
+  current = null; refreshStats(); showDigest();
 }
 
 function focusNode(id) {
@@ -606,13 +780,27 @@ function applyFilters() {
     cy.nodes().forEach(n => {
       const okType = activeTypes.has(n.data("type"));
       const okStatus = !statusFilter || n.data("status") === statusFilter;
-      n.toggleClass("hidden", !(okType && okStatus));
+      const okTag = !tagFilter || (n.data("tags") || []).includes(tagFilter);
+      n.toggleClass("hidden", !(okType && okStatus && okTag));
     });
     cy.edges().forEach(e => {
       const hide = e.source().hasClass("hidden") || e.target().hasClass("hidden");
       e.toggleClass("hidden", hide);
     });
   });
+}
+
+// Clicking a tag filters the graph to show only elements carrying it.
+function filterByTag(tag) {
+  tagFilter = (tagFilter === tag) ? null : tag;   // click again to clear
+  renderTagFilter();
+  applyFilters();
+}
+function clearTagFilter() { tagFilter = null; renderTagFilter(); applyFilters(); }
+function renderTagFilter() {
+  const el = document.getElementById("tagFilterRow");
+  el.innerHTML = tagFilter
+    ? `<span class="chip" onclick="clearTagFilter()" title="Clear tag filter">tag: ${escapeHtml(tagFilter)} ✕</span>` : "";
 }
 
 function escapeHtml(s) {
@@ -642,7 +830,7 @@ function clearSel() { cy.$(":selected").unselect(); updateToolbar(); }
 async function post(path, body) {
   const r = await fetch(path, { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) { alert(`${path} failed: ${(await r.json()).detail || r.status}`); throw new Error(path); }
+  if (!r.ok) { toast(`${path} failed: ${(await r.json()).detail || r.status}`, "error"); throw new Error(path); }
   return r.json();
 }
 
@@ -651,9 +839,9 @@ async function applyBulkStatus(status) {
   if (!ids.length || !status) return;
   const res = await post("/bulk/status", { ids, status });
   res.updated.forEach(id => cy.getElementById(id).data({ status }));
-  if (res.skipped.length) alert(`${res.skipped.length} skipped (illegal transition)`);
+  if (res.skipped.length) toast(`${res.skipped.length} skipped (illegal transition)`, "error");
   applyFilters(); refreshStats();
-  document.getElementById("bulkStatus").value = "";
+  const bs = document.getElementById("bulkStatus"); bs.value = ""; bs._csSync && bs._csSync();
 }
 
 async function bulkTag() {
@@ -698,7 +886,7 @@ async function createFinding(affects) {
 async function newFinding() {
   const affects = selectedIds();
   if (!affects.length) {
-    alert("Select the asset(s) this finding affects first — or use “＋ finding on this asset” in a node's panel.");
+    toast("Select the asset(s) this finding affects first — or use “＋ finding on this asset” in a node's panel.", "error");
     return;
   }
   const node = await createFinding(affects);
@@ -768,7 +956,7 @@ function buildTypeFilters() {
 // search box and tag-chip clicks; never repositions existing nodes.
 async function runSearch(query, limit = 100) {
   const d = await api(`/search?q=${encodeURIComponent(query)}&limit=${limit}&program=${encodeURIComponent(currentProgram)}`);
-  if (!d.nodes.length) { alert(`no matches for “${query}” in ${currentProgram}`); return null; }
+  if (!d.nodes.length) { toast(`No matches for “${query}” in ${currentProgram}`, "error"); return null; }
   const fresh = [];
   d.nodes.forEach(n => { const a = addNode(n); if (a) fresh.push(a); });
   placeRing(centroid([]), fresh);
@@ -890,6 +1078,7 @@ function openModal({ title, fields, submitLabel = "OK" }) {
       return `<label>${f.label}</label><input name="${f.name}" placeholder="${f.placeholder || ""}" value="${v}" />`;
     }).join("");
     document.getElementById("modalSubmit").textContent = submitLabel;
+    enhanceSelects(form);
     bg.classList.add("show");
     const first = form.querySelector("input,select,textarea");
     if (first) setTimeout(() => first.focus(), 40);
@@ -913,6 +1102,42 @@ function openModal({ title, fields, submitLabel = "OK" }) {
   });
 }
 
+// --- toast (replaces native alert) -------------------------------------------
+function toast(msg, type = "info") {
+  let wrap = document.getElementById("toastWrap");
+  if (!wrap) { wrap = document.createElement("div"); wrap.id = "toastWrap"; document.body.appendChild(wrap); }
+  const t = document.createElement("div");
+  t.className = "toast " + type;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(() => { t.classList.add("out"); setTimeout(() => t.remove(), 260); }, 3400);
+}
+
+// --- confirm dialog (replaces native confirm) — returns Promise<bool> --------
+function confirmDialog(message, { okLabel = "Confirm", danger = false } = {}) {
+  return new Promise(resolve => {
+    const bg = document.getElementById("modalBg");
+    const form = document.getElementById("modalForm");
+    const submitBtn = document.getElementById("modalSubmit");
+    const cancelBtn = document.getElementById("modalCancel");
+    document.getElementById("modalTitle").textContent = "Confirm";
+    form.innerHTML = `<div class="modal-msg">${escapeHtml(message)}</div>`;
+    submitBtn.textContent = okLabel;
+    submitBtn.className = "btn " + (danger ? "danger" : "primary");
+    bg.classList.add("show");
+    const done = v => {
+      bg.classList.remove("show");
+      submitBtn.onclick = cancelBtn.onclick = bg.onclick = form.onsubmit = null;
+      submitBtn.className = "btn primary";
+      resolve(v);
+    };
+    submitBtn.onclick = () => done(true);
+    cancelBtn.onclick = () => done(false);
+    bg.onclick = e => { if (e.target === bg) done(false); };
+    form.onsubmit = e => { e.preventDefault(); done(true); };
+  });
+}
+
 // --- in-page importer --------------------------------------------------------
 // Paste or upload a tool's output and import it into the current program.
 async function openImport() {
@@ -932,6 +1157,7 @@ async function openImport() {
     <input type="file" id="impFile" />
     <div class="hint" id="impHint" style="margin-top:6px">
       Lands in program <b>${currentProgram}</b>. Re-imports are idempotent.</div>`;
+  enhanceSelects(form);
   bg.classList.add("show");
   setTimeout(() => form.querySelector("#impData").focus(), 40);
 
@@ -977,6 +1203,7 @@ async function loadPrograms() {
   sel.innerHTML = [...new Set(names)].map(p =>
     `<option value="${p}" ${p === currentProgram ? "selected" : ""}>${p}</option>`).join("") +
     `<option value="__new__">＋ New program…</option>`;
+  sel._csSync && sel._csSync();   // refresh the custom-dropdown label
 }
 
 async function switchProgram(name) {
@@ -1027,6 +1254,60 @@ function initToolbarDrag() {
   });
 }
 
+// --- custom dropdowns: replace native <select> menus with themed ones --------
+// The native select stays in the DOM (hidden) so .value, change events, and
+// getElementById keep working; we only restyle the button + popup list.
+let _csMenu = null;
+function closeCs() { if (_csMenu) { _csMenu.remove(); _csMenu = null; } }
+function enhanceSelect(sel) {
+  if (sel.dataset.cs) return;
+  sel.dataset.cs = "1";
+  const wrap = document.createElement("div");
+  wrap.className = "cs" + (sel.classList.contains("hdr-select") ? " cs-hdr" : "");
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(sel);
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "cs-btn";
+  wrap.appendChild(btn);
+  const sync = () => btn.innerHTML =
+    `<span class="cs-val">${escapeHtml(sel.options[sel.selectedIndex]?.text || "")}</span><span class="cs-chev">▼</span>`;
+  sync();
+  sel._csSync = sync;
+  sel.addEventListener("change", sync);
+  btn.addEventListener("click", e => { e.stopPropagation(); openCsMenu(sel, btn); });
+}
+function enhanceSelects(root) { (root || document).querySelectorAll("select:not([data-cs])").forEach(enhanceSelect); }
+function openCsMenu(sel, btn) {
+  const wasOpen = _csMenu && _csMenu._sel === sel;
+  closeCs();
+  if (wasOpen) return;
+  const menu = document.createElement("div");
+  menu.className = "cs-menu"; menu._sel = sel;
+  menu.innerHTML = [...sel.options].map((o, i) =>
+    `<div class="cs-opt${i === sel.selectedIndex ? " sel" : ""}" data-i="${i}">${escapeHtml(o.text)}</div>`).join("");
+  document.body.appendChild(menu);
+  const r = btn.getBoundingClientRect();
+  menu.style.left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8) + "px";
+  menu.style.minWidth = r.width + "px";
+  const spaceBelow = window.innerHeight - r.bottom;
+  if (spaceBelow < Math.min(menu.offsetHeight + 8, 240) && r.top > spaceBelow) {
+    menu.style.bottom = (window.innerHeight - r.top + 4) + "px";
+  } else {
+    menu.style.top = (r.bottom + 4) + "px";
+  }
+  menu.onclick = e => {
+    const o = e.target.closest(".cs-opt"); if (!o) return;
+    sel.selectedIndex = +o.dataset.i;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    closeCs();
+  };
+  _csMenu = menu;
+}
+document.addEventListener("click", closeCs);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeCs(); });
+window.addEventListener("resize", closeCs);
+document.addEventListener("scroll", closeCs, true);
+
 // Load the roots for the active program (used at startup and on program switch)
 async function loadGraph() {
   await refreshStats();
@@ -1045,6 +1326,7 @@ async function loadGraph() {
   placeRing(center, fresh);      // collision-free initial spread
   applyFilters();
   relayout();                    // one global layout to arrange the roots
+  showDigest();                  // idle panel = program attack-surface overview
 }
 
 async function init() {
@@ -1061,6 +1343,7 @@ async function init() {
   fontSel.addEventListener("change", () => applyFont(fontSel.value));
   await loadPrograms();
   document.getElementById("programSelect").addEventListener("change", onProgramChange);
+  enhanceSelects();              // restyle all header/left/toolbar dropdowns
   await loadGraph();
 }
 init();
