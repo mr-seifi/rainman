@@ -338,8 +338,9 @@
         <select id="statusFilter"><option value="">all statuses</option></select>
         <div id="tagFilterRow" class="chips"></div>
         <h2 style="margin-top:16px">Legend</h2>
-        <div class="hint">Border = status · size = type. Click a node to toggle
-          its 1-hop neighborhood. Box-select for bulk actions.</div>
+        <div class="hint">Border = status · size = type · <span style="color:#22FF8F">green
+          glow = live HTTP (httpx)</span>. Click a node to toggle its 1-hop
+          neighborhood. Box-select for bulk actions.</div>
         <h2 style="margin-top:16px">Hunt</h2>
         <div id="huntLegend"></div>
       </div>
@@ -509,6 +510,12 @@ const cy = cytoscape({
     // expanded nodes get a soft halo (not a size change, so type sizing holds)
     { selector: "node.expanded", style: {
         "underlay-color": "#4f9dff", "underlay-opacity": 0.18, "underlay-padding": 6 } },
+    // live HTTP service (responded to httpx) — green "active" glow. Declared after
+    // .expanded so a live+expanded node reads as live (green wins).
+    { selector: "node.live", style: {
+        "underlay-color": "#22FF8F", "underlay-opacity": 0.3, "underlay-padding": 7 } },
+    // focus mode: everything not related to the selection fades back
+    { selector: "node.dim", style: { "opacity": 0.18, "underlay-opacity": 0.06 } },
     { selector: "edge", style: {
         "width": 1.2,
         "line-color": ele => EDGE_COLORS[ele.data("type")] || "#39414d",
@@ -525,6 +532,7 @@ const cy = cytoscape({
     { selector: "edge:selected", style: {
         "label": "data(type)", "font-size": 7, "color": "#9fb0c3",
         "text-rotation": "autorotate", "line-opacity": 1, "width": 2.4 } },
+    { selector: "edge.dim", style: { "opacity": 0.08 } },
     { selector: ".hidden", style: { "display": "none" } },
   ],
 });
@@ -544,6 +552,7 @@ function addNode(n, position) {
     id: n.id, label: n.value, type: n.type, status: n.status, tags: n.tags || [],
     hunt: (n.props && n.props.hunt) || "not_worked", raw: n } });
   node.style({ "color": GRAPH_TEXT, "font-family": GRAPH_FONT });   // active theme + font
+  if ((n.sources || []).includes("httpx")) node.addClass("live");   // HTTP service up
   return node;
 }
 function addEdge(e) {
@@ -603,7 +612,7 @@ async function expand(id) {
   parent.addClass("expanded");
   placeRing(center, ring);
   applyFilters();
-  if (parent.selected()) highlightSelectedEdges();   // bold edges to the new neighbors
+  if (parent.selected()) focusSelection();   // re-spotlight incl. the new neighbors
   // a large fan-out spreads well beyond the viewport — reframe so it's visible
   if (ring.length > 18) {
     const around = cy.getElementById(id).closedNeighborhood().filter(":visible");
@@ -673,6 +682,7 @@ async function showDetail(id) {
   current = id;
   const d = await api(`/node?id=${encodeURIComponent(id)}`);
   const n = d.node, p = n.props || {};
+  cy.getElementById(id).toggleClass("live", (n.sources || []).includes("httpx"));  // sync live glow
   const statusOpts = [n.status, ...(TRANSITIONS[n.status] || [])]
     .map(s => `<option value="${s}" ${s === n.status ? "selected" : ""}>${s}</option>`).join("");
   const kv = Object.entries(p).filter(([k, v]) => v !== null && v !== "" && k !== "hunt")
@@ -839,14 +849,21 @@ function updateToolbar() {
   tb.classList.toggle("show", ids.length > 0);
   document.getElementById("linkBtn").disabled = ids.length !== 2;
 }
-// bold every edge touching a selected node
-function highlightSelectedEdges() {
+// Spotlight the selection: bold its edges, and fade everything that isn't the
+// selected node, its edges, or its immediate neighbors — so the click is focus.
+function focusSelection() {
+  const sel = cy.$("node:selected");
   cy.batch(() => {
     cy.edges(".hl").removeClass("hl");
-    cy.$("node:selected").connectedEdges().addClass("hl");
+    if (sel.empty()) { cy.elements().removeClass("dim"); return; }
+    const edges = sel.connectedEdges();
+    edges.addClass("hl");
+    const keep = sel.union(edges).union(edges.connectedNodes());
+    cy.elements().addClass("dim");
+    keep.removeClass("dim");
   });
 }
-cy.on("select unselect", "node", () => { updateToolbar(); highlightSelectedEdges(); });
+cy.on("select unselect", "node", () => { updateToolbar(); focusSelection(); });
 function clearSel() { cy.$(":selected").unselect(); updateToolbar(); }
 
 async function post(path, body) {
