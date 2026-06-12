@@ -517,6 +517,10 @@ const cy = cytoscape({
         "target-arrow-shape": "triangle", "arrow-scale": 0.7,
         "line-style": ele => EDGE_DASHED.has(ele.data("type")) ? "dashed" : "solid",
         "curve-style": "bezier" } },
+    // edges incident to a selected node — bold + full opacity + above other edges
+    { selector: "edge.hl", style: {
+        "width": 3.2, "line-opacity": 1, "arrow-scale": 1, "z-index": 999,
+        "label": "data(type)", "font-size": 7, "color": "#9fb0c3", "text-rotation": "autorotate" } },
     // edge type label only on the selected edge — keeps the canvas cheap.
     { selector: "edge:selected", style: {
         "label": "data(type)", "font-size": 7, "color": "#9fb0c3",
@@ -549,19 +553,21 @@ function addEdge(e) {
   return true;
 }
 
-// Lay new nodes on a ring around a fixed center. Only these nodes are placed;
-// nothing already on the canvas is touched — so adding never shifts the graph.
-// Place new nodes on concentric rings around a center, spaced by node size so
-// they never overlap. Each ring holds as many as fit at its circumference.
+// Lay new nodes on concentric rings around a fixed center. Spacing is tuned for
+// the *label* footprint (long FQDNs), not just the node dot — so large fan-outs
+// stay readable on the (effectively infinite) canvas instead of colliding.
+// Only these nodes are placed; nothing already on the canvas is touched.
 function placeRing(center, nodes) {
   if (!nodes.length) return;
-  const slot = 46;                       // min spacing between node centers
+  const slot = 165;                      // arc spacing ≈ label width, avoids overlap
+  const gap = 150;                       // distance between concentric rings
+  const start = 150;
   let placed = 0, ring = 1;
   while (placed < nodes.length) {
-    const radius = 80 + (ring - 1) * 70;
+    const radius = start + (ring - 1) * gap;
     const capacity = Math.max(6, Math.floor((2 * Math.PI * radius) / slot));
     const count = Math.min(capacity, nodes.length - placed);
-    const offset = ring * 0.6;            // rotate each ring so spokes don't align
+    const offset = ring * 0.5;            // rotate each ring so spokes don't align
     for (let i = 0; i < count; i++) {
       const a = (2 * Math.PI * i) / count - Math.PI / 2 + offset;
       nodes[placed + i].position({
@@ -597,6 +603,12 @@ async function expand(id) {
   parent.addClass("expanded");
   placeRing(center, ring);
   applyFilters();
+  if (parent.selected()) highlightSelectedEdges();   // bold edges to the new neighbors
+  // a large fan-out spreads well beyond the viewport — reframe so it's visible
+  if (ring.length > 18) {
+    const around = cy.getElementById(id).closedNeighborhood().filter(":visible");
+    cy.animate({ fit: { eles: around, padding: 60 }, duration: 350, easing: "ease" });
+  }
 }
 
 // Collapse: remove the subtree hanging off `node` that isn't reachable from the
@@ -770,9 +782,12 @@ function focusNode(id) {
 // explicit, user-initiated reorganize + fit (the "relayout" / fit button).
 // This is the ONLY place a global layout runs — never automatically on add.
 function relayout() {
+  // scale spacing with graph size so dense graphs spread out instead of balling up
+  const n = cy.nodes(":visible").length;
   cy.layout({ name: "cose", randomize: false, animate: true, animationDuration: 350,
-    nodeRepulsion: 14000, idealEdgeLength: 110, nodeOverlap: 24, componentSpacing: 140,
-    fit: true, padding: 50 }).run();
+    nodeRepulsion: Math.max(14000, n * 900), idealEdgeLength: Math.max(120, 70 + n * 1.4),
+    nodeOverlap: 32, componentSpacing: Math.max(160, n * 2),
+    fit: true, padding: 60 }).run();
 }
 
 function applyFilters() {
@@ -824,7 +839,14 @@ function updateToolbar() {
   tb.classList.toggle("show", ids.length > 0);
   document.getElementById("linkBtn").disabled = ids.length !== 2;
 }
-cy.on("select unselect", "node", updateToolbar);
+// bold every edge touching a selected node
+function highlightSelectedEdges() {
+  cy.batch(() => {
+    cy.edges(".hl").removeClass("hl");
+    cy.$("node:selected").connectedEdges().addClass("hl");
+  });
+}
+cy.on("select unselect", "node", () => { updateToolbar(); highlightSelectedEdges(); });
 function clearSel() { cy.$(":selected").unselect(); updateToolbar(); }
 
 async function post(path, body) {
