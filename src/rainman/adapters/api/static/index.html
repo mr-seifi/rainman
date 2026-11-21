@@ -123,9 +123,12 @@
   .kv div:nth-child(odd) { color: var(--muted); }
   .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
     border: 1px solid var(--line); }
-  .nb { padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; margin: 4px 0;
+  #detailBody.fade { animation: detailIn .17s ease; }
+  @keyframes detailIn { from { opacity: .25; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  .nb { transition: border-color .14s, background-color .14s, transform .1s;
+    padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; margin: 4px 0;
     cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
-  .nb:hover { border-color: var(--accent); }
+  .nb:hover { border-color: var(--accent); background: var(--bg3); transform: translateX(2px); }
   .nb small { color: var(--muted); }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 8px; }
   .chip { padding: 2px 10px; border-radius: 999px; font-size: 11px; cursor: pointer;
@@ -229,7 +232,7 @@
     color: var(--text-dim); margin-top: 2px; word-break: break-all; }
   /* endpoint list */
   .ep-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
-    border: 1px solid transparent; cursor: pointer; }
+    border: 1px solid transparent; cursor: pointer; transition: border-color .14s, background-color .14s; }
   .ep-row:hover { border-color: var(--border-hi); background: var(--bg3); }
   .ep-method { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px;
     font-weight: 700; width: 44px; text-align: center; border-radius: 3px; padding: 2px 0; }
@@ -337,6 +340,7 @@
         <h2 style="margin-top:16px">Status</h2>
         <select id="statusFilter"><option value="">all statuses</option></select>
         <div id="tagFilterRow" class="chips"></div>
+        <div id="hiddenRow" class="chips"></div>
         <h2 style="margin-top:16px">Legend</h2>
         <div class="hint">Border = status · size = type · <span style="color:#22FF8F">green
           glow = live HTTP (httpx)</span>. Click a node to toggle its 1-hop
@@ -356,6 +360,7 @@
         <button class="btn" onclick="newFunctionality()">＋ functionality</button>
         <button class="btn" onclick="newFinding()">＋ finding</button>
         <button class="btn" id="linkBtn" onclick="linkSelected()">link 2</button>
+        <button class="btn" onclick="hideSelected()" title="Hide from view (not deleted)">hide</button>
         <button class="btn" onclick="clearSel()">clear</button>
         <button class="icon minBtn" onclick="toggleToolbarMin()" title="Minimize">–</button>
       </div>
@@ -505,7 +510,10 @@ const cy = cytoscape({
         "background-width": 9, "background-height": 9,
         "background-position-x": "100%", "background-position-y": "0%",
         "background-image-containment": "over", "background-clip": "none",
-        "background-image-opacity": 1, "bounds-expansion": 6 } },
+        "background-image-opacity": 1, "bounds-expansion": 6,
+        // animate style changes (focus/dim, select, glow) instead of snapping
+        "transition-property": "opacity, border-width, border-color, underlay-opacity, underlay-padding, width, height",
+        "transition-duration": "0.16s", "transition-timing-function": "ease" } },
     { selector: "node:selected", style: { "border-color": "#fff", "border-width": 4 } },
     // expanded nodes get a soft halo (not a size change, so type sizing holds)
     { selector: "node.expanded", style: {
@@ -523,7 +531,8 @@ const cy = cytoscape({
         "target-arrow-color": ele => EDGE_COLORS[ele.data("type")] || "#39414d",
         "target-arrow-shape": "triangle", "arrow-scale": 0.7,
         "line-style": ele => EDGE_DASHED.has(ele.data("type")) ? "dashed" : "solid",
-        "curve-style": "bezier" } },
+        "curve-style": "bezier",
+        "transition-property": "opacity, line-opacity, width", "transition-duration": "0.16s" } },
     // edges incident to a selected node — bold + full opacity + above other edges
     { selector: "edge.hl", style: {
         "width": 3.2, "line-opacity": 1, "arrow-scale": 1, "z-index": 999,
@@ -726,7 +735,14 @@ async function showDetail(id) {
     ${eps.length ? `<h2>Endpoints (${eps.length})</h2><div class="endpoint-list">${eps.map(epRow).join("")}</div>` : ""}
     ${others.length ? `<h2>Neighbors (${others.length})</h2>${others.map(x =>
       `<div class="nb" onclick="focusNode('${x.id}')"><span>${escapeHtml(x.value)}</span><small>${x.type}</small></div>`).join("")}` : ""}`;
+  pulseDetail();
   enhanceSelects(document.getElementById("detailBody"));
+}
+
+// retrigger the detail-panel fade-in animation on content swap
+function pulseDetail() {
+  const b = document.getElementById("detailBody");
+  b.classList.remove("fade"); void b.offsetWidth; b.classList.add("fade");
 }
 
 // Idle panel: attack-surface digest for the active program
@@ -745,6 +761,7 @@ async function showDigest() {
       ${card(s.flagged, "flagged", "flagged")}${card(s.confirmed, "confirmed", "confirmed")}
     </div>
     <div class="hint" style="margin-top:11px">Click a node to inspect &amp; edit it · ⤓ Import to add data.</div>`;
+  pulseDetail();
 }
 
 async function saveNode() {
@@ -806,13 +823,30 @@ function applyFilters() {
       const okType = activeTypes.has(n.data("type"));
       const okStatus = !statusFilter || n.data("status") === statusFilter;
       const okTag = !tagFilter || (n.data("tags") || []).includes(tagFilter);
-      n.toggleClass("hidden", !(okType && okStatus && okTag));
+      n.toggleClass("hidden", n.hasClass("uhidden") || !(okType && okStatus && okTag));
     });
     cy.edges().forEach(e => {
       const hide = e.source().hasClass("hidden") || e.target().hasClass("hidden");
       e.toggleClass("hidden", hide);
     });
   });
+  renderHidden();
+}
+
+// Hide selected nodes from view (still in the DB / graph, just not drawn).
+function hideSelected() {
+  const sel = cy.$("node:selected");
+  if (sel.empty()) { toast("Select node(s) to hide first.", "error"); return; }
+  sel.addClass("uhidden").unselect();
+  updateToolbar(); focusSelection(); applyFilters();
+}
+function unhideAll() { cy.nodes(".uhidden").removeClass("uhidden"); applyFilters(); }
+function renderHidden() {
+  const el = document.getElementById("hiddenRow");
+  if (!el) return;
+  const n = cy.nodes(".uhidden").length;
+  el.innerHTML = n
+    ? `<span class="chip" onclick="unhideAll()" title="Show hidden nodes again">${n} hidden · show ✕</span>` : "";
 }
 
 // Clicking a tag filters the graph to show only elements carrying it.
