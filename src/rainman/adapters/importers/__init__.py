@@ -15,6 +15,7 @@ from .katana import KatanaImporter
 from .kiterunner import KiteRunnerImporter
 from .naabu import NaabuImporter
 from .nmap import NmapImporter
+from .nuclei import NucleiImporter
 from .shuffledns import ShufflednsImporter
 from .subfinder import SubfinderImporter
 from .waybackurls import WaybackurlsImporter
@@ -42,6 +43,7 @@ for _imp in (
     HttpxImporter(),
     DnsxImporter(),
     NmapImporter(),
+    NucleiImporter(),
     NaabuImporter(),
     ShufflednsImporter(),
     SubfinderImporter(),

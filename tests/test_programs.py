@@ -17,7 +17,8 @@ def test_programs_are_isolated():
     # roots are scoped per program
     acme_roots = {n["value"] for n in c.get("/roots", params={"program": "acme"}).json()["nodes"]}
     globex_roots = {n["value"] for n in c.get("/roots", params={"program": "globex"}).json()["nodes"]}
-    assert "api.acme.com" in acme_roots
+    # hosts are auto-linked to their apex, so the apex is the root
+    assert "acme.com" in acme_roots
     assert "globex.com" in globex_roots
     assert acme_roots.isdisjoint(globex_roots)
 

@@ -6,7 +6,7 @@ Neo4j-vs-Postgres decision and "add a new tool" a localized change (§14).
 
 from __future__ import annotations
 
-from typing import Iterable, Optional, Protocol, runtime_checkable
+from typing import ContextManager, Iterable, Optional, Protocol, runtime_checkable
 
 from .model import Edge, EdgeOp, Node, NodeOp
 
@@ -19,7 +19,7 @@ class GraphRepository(Protocol):
 
     def upsert_node(self, op: NodeOp) -> Node: ...
 
-    def upsert_edge(self, op: EdgeOp) -> Edge: ...
+    def upsert_edge(self, op: EdgeOp, *, ensure_nodes: bool = True) -> Edge: ...
 
     def link_nodes(self, from_id: str, to_id: str, edge_type, **kwargs): ...
 
@@ -63,6 +63,38 @@ class GraphRepository(Protocol):
     def digest(self) -> dict:
         """Counts by type/status + flagged/untriaged queues."""
         ...
+
+    def transaction(self) -> ContextManager[None]:
+        """Unit of work: writes inside the block commit together or not at all."""
+        ...
+
+    def has_edge(self, from_id: str, edge_type) -> bool:
+        """Whether ``from_id`` already has an outgoing edge of this type."""
+        ...
+
+    def unlinked_hosts(self) -> list[Node]:
+        """Subdomain nodes with no ``subdomain_of`` edge (for ``repair``)."""
+        ...
+
+    def query(
+        self,
+        terms: list,
+        *,
+        program: Optional[str] = None,
+        sort: Optional[str] = None,
+        desc: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[Node], int]:
+        """Run a parsed hunter query (``domain.query``); returns the page of
+        nodes and the total match count."""
+        ...
+
+    def record_import(
+        self, tool: str, program: str, started_at, *, nodes: int, edges: int, new_nodes: int
+    ) -> None: ...
+
+    def imports(self, program: Optional[str] = None, limit: int = 20) -> list[dict]: ...
 
 
 @runtime_checkable

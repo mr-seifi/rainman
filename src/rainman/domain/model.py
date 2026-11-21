@@ -149,6 +149,9 @@ class EdgeOp:
     program: str = "default"
 
 
+_HISTORY_CAP = 20
+
+
 def merge_node(existing: Node, op: NodeOp, new_id: str) -> Node:
     """Upsert rule: union sources, refresh last_seen, shallow-merge props.
 
@@ -159,13 +162,28 @@ def merge_node(existing: Node, op: NodeOp, new_id: str) -> Node:
     sources = sorted(set(existing.sources) | ({op.source} if op.source else set()))
     tags = sorted(set(existing.tags) | set(op.tags))
     props = {**existing.props, **op.props}
+
+    # Keep a short trail when an observed status code flips (403→200, …): a
+    # behaviour change is a lead, and last-write-wins would erase it.
+    old_code, new_code = existing.props.get("status_code"), op.props.get("status_code")
+    if old_code is not None and new_code is not None and old_code != new_code:
+        history = list(existing.props.get("status_code_history") or [])
+        history.append({"code": old_code, "until": utcnow().isoformat()})
+        props["status_code_history"] = history[-_HISTORY_CAP:]
+
+    # An op may only move status along a legal transition; anything else is
+    # ignored rather than letting bulk writes bypass the state machine.
+    status = existing.status
+    if op.status is not None and can_transition(existing.status, op.status):
+        status = op.status
+
     return replace(
         existing,
         last_seen=utcnow(),
         sources=sources,
         tags=tags,
         notes=op.notes if op.notes is not None else existing.notes,
-        status=op.status if op.status is not None else existing.status,
+        status=status,
         confidence=op.confidence if op.confidence is not None else existing.confidence,
         props=props,
     )

@@ -35,3 +35,16 @@ def edge_to_dict(e: Edge) -> dict:
         "author_type": e.author_type.value,
         "props": e.props,
     }
+
+
+def export_value(n: Node) -> str:
+    """The form you would feed back into a tool: endpoints and parameters
+    become full URLs (their graph identity drops the scheme), everything else
+    is its plain value."""
+    scheme = n.props.get("scheme") or "https"
+    if n.type.value == "endpoint":
+        return f"{scheme}://{n.value}"
+    if n.type.value == "parameter" and "#" in n.value:
+        url, name = n.value.rsplit("#", 1)
+        return f"{scheme}://{url}?{name}={n.props.get('example', '')}"
+    return n.value

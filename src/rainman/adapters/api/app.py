@@ -8,12 +8,16 @@ goes through IngestService so dedupe and validation live in one place.
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
-from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 _STATIC = Path(__file__).parent / "static"
@@ -30,7 +34,10 @@ from ...domain.model import (
 )
 from ..importers import available, get_importer
 from ..store import SqliteGraphRepository
-from .serialize import edge_to_dict, node_to_dict
+from ...domain.query import LEADS, parse_query
+from .serialize import edge_to_dict, export_value, node_to_dict
+
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 class NodeOpIn(BaseModel):
@@ -107,12 +114,27 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
     repo = SqliteGraphRepository(db_path)
     svc = IngestService(repo)
     app = FastAPI(title="rainman", version="0.1.0")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+
+    # The graph holds recon data and findings and the server has no login, so
+    # the browser must not be usable as a bridge to it. No CORS headers are
+    # sent (other sites can't read responses), and state-changing requests
+    # that a browser marks as coming from another origin are refused — which
+    # stops a web page from blind-POSTing to localhost. Non-browser clients
+    # (curl, the CLI, a Burp extension) send no Origin and are unaffected.
+    @app.middleware("http")
+    async def same_origin_writes(request: Request, call_next):
+        if request.method not in _SAFE_METHODS:
+            origin = request.headers.get("origin")
+            cross = request.headers.get("sec-fetch-site") == "cross-site"
+            if origin and origin != "null":
+                cross = cross or urlsplit(origin).netloc != request.headers.get("host")
+            elif origin == "null":
+                cross = True
+            if cross:
+                return JSONResponse({"detail": "cross-origin write refused"}, status_code=403)
+        return await call_next(request)
+
+    app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
     @app.get("/", include_in_schema=False)
     def index():
@@ -169,10 +191,72 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
             raise HTTPException(404, f"no node {id!r}")
         type_list = [t for t in types.split(",") if t] if types else None
         edges, neighbors = repo.neighbors(id, types=type_list, limit=limit)
+        total = repo.degree(id)
         return {
             "edges": [edge_to_dict(e) for e in edges],
             "nodes": [node_to_dict(x) for x in neighbors],
+            # lets the UI say "showing 500 of 4,210" instead of silently cutting
+            "total": total,
+            "truncated": not type_list and len(edges) < total,
         }
+
+    @app.get("/nodes")
+    def nodes(
+        q: str = "",
+        program: Optional[str] = None,
+        sort: Optional[str] = None,
+        order: str = "desc",
+        limit: int = Query(100, ge=1, le=100000),
+        offset: int = Query(0, ge=0),
+        format: str = "json",
+    ):
+        """The hunter query endpoint (see ``domain/query.py`` for the syntax).
+        ``format=txt|csv|jsonl`` exports the matches for piping into tools."""
+        try:
+            found, total = repo.query(
+                parse_query(q), program=program, sort=sort,
+                desc=order != "asc", limit=limit, offset=offset,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if format == "txt":
+            return PlainTextResponse("".join(export_value(n) + "\n" for n in found))
+        if format == "jsonl":
+            return PlainTextResponse(
+                "".join(json.dumps(node_to_dict(n)) + "\n" for n in found),
+                media_type="application/x-ndjson",
+            )
+        if format == "csv":
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(["type", "value", "url", "status", "status_code", "content_length",
+                        "title", "tags", "sources", "first_seen", "last_seen", "notes"])
+            for n in found:
+                w.writerow([
+                    n.type.value, n.value, export_value(n), n.status.value,
+                    n.props.get("status_code", ""), n.props.get("content_length", ""),
+                    n.props.get("title", ""), " ".join(n.tags), " ".join(n.sources),
+                    n.first_seen.isoformat(), n.last_seen.isoformat(), n.notes,
+                ])
+            return PlainTextResponse(buf.getvalue(), media_type="text/csv")
+        return {"nodes": [node_to_dict(n) for n in found], "total": total}
+
+    @app.get("/leads")
+    def leads(program: Optional[str] = None):
+        """Pre-baked hunts with live counts — where to look next."""
+        out = []
+        for lead in LEADS:
+            _, total = repo.query(parse_query(lead["query"]), program=program, limit=1)
+            out.append({**lead, "count": total})
+        return {"leads": out}
+
+    @app.get("/imports")
+    def imports(program: Optional[str] = None, limit: int = 20):
+        return {"imports": repo.imports(program=program, limit=limit)}
+
+    @app.post("/repair")
+    def repair():
+        return svc.repair()
 
     @app.post("/import/{tool}")
     def import_tool(
@@ -184,8 +268,14 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
             importer = get_importer(tool)
         except KeyError as e:
             raise HTTPException(404, str(e))
-        result = svc.ingest(importer.parse(data), program=program)
-        return {"tool": tool, "program": program, "nodes": result.nodes, "edges": result.edges}
+        try:
+            result = svc.ingest(importer.parse(data), program=program, tool=tool)
+        except Exception as e:  # malformed tool output — nothing was written
+            raise HTTPException(400, f"could not parse {tool} output: {e}")
+        return {
+            "tool": tool, "program": program, "nodes": result.nodes,
+            "edges": result.edges, "new_nodes": result.new_nodes, "skipped": result.skipped,
+        }
 
     @app.post("/ingest")
     def ingest(payload: IngestIn, program: str = "default"):
@@ -203,7 +293,7 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
                 author_type=e.author_type, props=e.props,
             ))
         result = svc.ingest(ops, program=program)
-        return {"nodes": result.nodes, "edges": result.edges}
+        return {"nodes": result.nodes, "edges": result.edges, "new_nodes": result.new_nodes}
 
     @app.patch("/node")
     def patch_node(id: str = Query(...), patch: NodePatch = Body(...)):

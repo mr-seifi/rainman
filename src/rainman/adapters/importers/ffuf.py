@@ -50,6 +50,8 @@ class FfufImporter:
             return
 
         if mode == "param" and url:
+            # the endpoint being fuzzed must exist for the params to hang off
+            yield from emit_url(url, self.name, status=status, length=length, with_params=False)
             for val in fuzz.values():
                 pkey = param_key(url, str(val))
                 yield NodeOp(

@@ -36,7 +36,7 @@ class HttpxImporter:
 
         # Endpoint node.
         ep_props = {
-            "method": (rec.get("method") or "GET").upper(),
+            "method": rec["method"].upper() if rec.get("method") else None,
             "status_code": rec.get("status_code") or rec.get("status-code"),
             "content_length": rec.get("content_length") or rec.get("content-length"),
             "content_type": rec.get("content_type") or rec.get("content-type"),

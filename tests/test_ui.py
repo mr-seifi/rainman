@@ -21,8 +21,21 @@ def test_roots_prefers_domains():
     assert any(n["value"] == "example.com" for n in roots)
 
 
-def test_roots_falls_back_to_subdomains():
+def test_host_only_import_is_rooted_at_its_apex():
+    """httpx names only the host; ingest derives the apex so the host is
+    reachable from the roots view instead of being search-only."""
     c = TestClient(create_app(":memory:"))
     c.post("/import/httpx", content=HTTPX, headers={"content-type": "text/plain"})
+    roots = c.get("/roots").json()["nodes"]
+    assert [n["id"] for n in roots] == ["dom:example.com"]
+    hood = c.get("/neighborhood", params={"id": "dom:example.com"}).json()
+    assert "sub:api.example.com" in {n["id"] for n in hood["nodes"]}
+
+
+def test_roots_falls_back_to_subdomains():
+    """Hosts with no derivable apex (bare IPs) still give the view a start."""
+    c = TestClient(create_app(":memory:"))
+    c.post("/import/httpx", content='{"url":"http://203.0.113.9/"}',
+           headers={"content-type": "text/plain"})
     roots = c.get("/roots").json()["nodes"]
     assert roots and all(n["type"] == "subdomain" for n in roots)

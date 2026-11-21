@@ -8,6 +8,7 @@ instead of creating duplicates. Normalization rules live in exactly one place.
 from __future__ import annotations
 
 import ipaddress
+from functools import lru_cache
 from urllib.parse import urlsplit, urlunsplit
 
 from .model import NodeType
@@ -29,6 +30,7 @@ _PREFIX: dict[NodeType, str] = {
 }
 
 
+@lru_cache(maxsize=262144)
 def normalize_host(host: str) -> str:
     """Lowercase, strip whitespace and a single trailing dot. IDNA-encode."""
     h = host.strip().lower().rstrip(".")
@@ -44,6 +46,7 @@ def normalize_ip(addr: str) -> str:
     return str(ipaddress.ip_address(addr.strip()))
 
 
+@lru_cache(maxsize=262144)
 def normalize_url(url: str) -> str:
     """Canonical host+path key for an endpoint.
 
@@ -74,6 +77,19 @@ def normalize_value(node_type: NodeType, value: str) -> str:
         return normalize_url(value)
     if node_type == NodeType.technology:
         return value.strip().lower()
+    return value.strip()
+
+
+_CANONICAL_DISPLAY = (NodeType.domain, NodeType.subdomain, NodeType.ip, NodeType.endpoint)
+
+
+def display_value(node_type: NodeType, value: str) -> str:
+    """The ``value`` stored on a node. Hosts, IPs and endpoints are stored in
+    canonical form so the same asset reads the same whichever tool reported it
+    first (and so ``host:``/``value:`` queries behave); free-form types such as
+    technology names and finding titles keep their original spelling."""
+    if node_type in _CANONICAL_DISPLAY:
+        return normalize_value(node_type, value)
     return value.strip()
 
 

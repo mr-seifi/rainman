@@ -68,8 +68,12 @@ def emit_url(
 
     yield NodeOp(NodeType.subdomain, host, source=source)
 
+    # Only record what the tool actually observed: defaulting the method to GET
+    # here would overwrite a real POST recorded by an earlier import.
+    scheme = url.split("://", 1)[0].lower() if "://" in url else None
     ep_props = {
-        "method": (method or "GET").upper(),
+        "method": method.upper() if method else None,
+        "scheme": scheme if scheme in ("http", "https") else None,
         "status_code": status,
         "content_length": length,
     }

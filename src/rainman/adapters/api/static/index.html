@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>rainman</title>
-<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="/static/vendor/cytoscape.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -69,7 +69,11 @@
   #search { flex: 1; max-width: 380px; padding: 7px 11px; background: var(--bg);
     border: 1px solid var(--line); border-radius: 8px; color: var(--fg); }
   #search:focus { outline: none; border-color: var(--accent); }
-  #stats { color: var(--muted); font-size: 12px; }
+  #stats { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+  /* narrow windows: drop the counters first, then let the search box shrink */
+  @media (max-width: 1280px) { #stats { display: none; } }
+  @media (max-width: 1000px) { header { gap: 8px; } #search { min-width: 60px; } .hdr-select { min-width: 0; } }
   .hdr-select { width: auto; margin: 0; padding: 7px 30px 7px 11px; min-width: 112px; }
 
   #content { flex: 1; display: flex; min-height: 0; position: relative; }
@@ -301,6 +305,75 @@
   .toast.out { opacity: 0; transform: translateX(10px); transition: .25s; }
   @keyframes toastIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
   .modal-msg { font-size: 13px; color: var(--fg); line-height: 1.6; padding: 2px 0; }
+
+  /* view switch (graph | table) */
+  .seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { padding: 6px 13px; font: 500 12px/1 "Inter", system-ui, sans-serif; cursor: pointer;
+    color: var(--muted); background: var(--panel); border: none; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: none; }
+  .seg button:hover { color: var(--fg); }
+  .seg button.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+  #cy.off { display: none; }
+
+  /* leads: saved hunts with live counts */
+  .lead { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 5px 8px; margin: 2px 0; border: 1px solid transparent; border-radius: 6px;
+    cursor: pointer; font-size: 12px; }
+  .lead:hover { border-color: var(--border-hi); background: var(--bg3); }
+  .lead b { font: 500 11px var(--mono); color: var(--accent); }
+
+  /* table view — dense, mono for data, flat surfaces */
+  #tv { display: none; flex: 1; min-width: 0; flex-direction: column; background: var(--bg); }
+  #tv.show { display: flex; }
+  .tv-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px;
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  #tvQuery { flex: 1 1 280px; min-width: 0; padding: 8px 11px; font: 12px var(--mono); color: var(--fg);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  #tvQuery:focus { outline: none; border-color: var(--accent); }
+  #tvQuery.bad { border-color: #F05656; }
+  .tv-syntax { flex: none; display: none; padding: 10px 12px; border-bottom: 1px solid var(--line);
+    background: var(--bg2); font-size: 12px; color: var(--muted);
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 18px; }
+  .tv-syntax.show { display: grid; }
+  .tv-syntax code { color: var(--fg); cursor: pointer; font-size: 11px; }
+  .tv-syntax code:hover { color: var(--accent); }
+  .tv-bulk { flex: none; display: none; align-items: center; gap: 8px; padding: 7px 12px;
+    border-bottom: 1px solid var(--line); background: var(--bg2); font-size: 12px; }
+  .tv-bulk.show { display: flex; }
+  .tv-bulk .count { color: var(--accent); font-weight: 700; font-family: var(--mono); }
+  .tv-bulk select, .tv-bulk .cs { width: auto; margin: 0; }
+  .tv-scroll { flex: 1; min-height: 0; overflow: auto; }
+  #tvTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #tvTable th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 7px 10px;
+    font: 600 10px/1.2 "Inter", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .7px;
+    color: var(--muted); background: var(--panel); border-bottom: 1px solid var(--line);
+    white-space: nowrap; user-select: none; }
+  #tvTable th.sortable { cursor: pointer; }
+  #tvTable th.sortable:hover, #tvTable th.sorted { color: var(--accent); }
+  #tvTable td { padding: 5px 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+    white-space: nowrap; vertical-align: middle; }
+  #tvTable tbody tr { cursor: pointer; }
+  #tvTable tbody tr:hover { background: var(--bg2); }
+  #tvTable tbody tr.active { background: var(--bg3); }
+  #tvTable tbody tr.active td:first-child { box-shadow: 2px 0 0 var(--accent) inset; }
+  #tvTable .c-check { width: 28px; padding-right: 0; }
+  #tvTable .c-value { font-family: var(--mono); color: var(--title); max-width: 46vw;
+    overflow: hidden; text-overflow: ellipsis; }
+  #tvTable .c-num { font-family: var(--mono); text-align: right; color: var(--muted); }
+  #tvTable .c-info { max-width: 22vw; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  #tvTable .c-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  #tvTable .c-tags { max-width: 16vw; overflow: hidden; text-overflow: ellipsis;
+    font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  #tvTable .t-type { display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); }
+  #tvTable .t-type i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  #tvTable .t-new { margin-left: 6px; padding: 0 5px; border-radius: 4px; font: 600 9px var(--mono);
+    color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  #tvTable input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+  .tv-empty { padding: 28px 16px; color: var(--muted); font-size: 12px; }
+  .tv-empty.error { color: #F05656; font-family: var(--mono); }
+  .tv-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+    border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--muted); }
+  .tv-foot span { margin-right: auto; font-family: var(--mono); }
 </style>
 </head>
 <body>
@@ -309,6 +382,10 @@
     <button class="icon" id="leftToggle" onclick="togglePanel('left')" title="Toggle filters">☰</button>
     <h1>rain<span>man</span></h1>
     <select id="programSelect" class="hdr-select" title="Program / workspace"></select>
+    <div class="seg" id="viewSeg">
+      <button data-view="graph" class="on" title="Explore relationships">Graph</button>
+      <button data-view="table" title="Query, sort and triage as a list">Table</button>
+    </div>
     <button class="icon" onclick="openImport()" title="Import tool output">⤓</button>
     <input id="search" placeholder="Find host · endpoint · tag — Enter to add to the graph" />
     <span id="stats"></span>
@@ -335,7 +412,9 @@
         <button class="icon" onclick="togglePanel('left')" title="Collapse">«</button>
       </div>
       <div class="panel-body">
-        <h2>Node types</h2>
+        <h2>Leads</h2>
+        <div id="leadList"><div class="hint">Import recon output to see leads.</div></div>
+        <h2 style="margin-top:16px">Node types</h2>
         <div id="typeFilters"></div>
         <h2 style="margin-top:16px">Status</h2>
         <select id="statusFilter"><option value="">all statuses</option></select>
@@ -363,6 +442,34 @@
         <button class="btn" onclick="hideSelected()" title="Hide from view (not deleted)">hide</button>
         <button class="btn" onclick="clearSel()">clear</button>
         <button class="icon minBtn" onclick="toggleToolbarMin()" title="Minimize">–</button>
+      </div>
+    </div>
+
+    <div id="tv">
+      <div class="tv-bar">
+        <input id="tvQuery" spellcheck="false" autocomplete="off"
+          placeholder="type:endpoint code:403 -tag:archive      press / to focus, Enter to run" />
+        <button class="btn" onclick="toggleSyntax()" title="Query syntax">syntax</button>
+        <button class="btn" onclick="exportTable('txt')" title="All matches as plain URLs / values, one per line">⤓ list</button>
+        <button class="btn" onclick="exportTable('csv')" title="All matches as CSV">⤓ csv</button>
+      </div>
+      <div class="tv-syntax" id="tvSyntax"></div>
+      <div class="tv-bulk" id="tvBulk">
+        <span class="count" id="tvSelCount">0</span><span class="muted">selected</span>
+        <select id="tvBulkStatus"><option value="">set status…</option></select>
+        <button class="btn" onclick="tvTag()">add tag</button>
+        <button class="btn" onclick="tvFinding()">＋ finding</button>
+        <button class="btn" onclick="tvToGraph()">show in graph</button>
+        <button class="btn" onclick="tvClear()">clear</button>
+      </div>
+      <div class="tv-scroll">
+        <table id="tvTable"><thead></thead><tbody></tbody></table>
+        <div class="tv-empty" id="tvEmpty"></div>
+      </div>
+      <div class="tv-foot">
+        <span id="tvCount"></span>
+        <button class="btn" id="tvPrev" onclick="tvPage(-1)">‹ prev</button>
+        <button class="btn" id="tvNext" onclick="tvPage(1)">next ›</button>
       </div>
     </div>
 
@@ -618,6 +725,7 @@ async function expand(id) {
     if (added && !cached) ring.push(added);
   });
   d.edges.forEach(addEdge);
+  if (d.truncated) toast(`Showing ${d.edges.length.toLocaleString()} of ${d.total.toLocaleString()} links — use the Table view to see them all.`);
   parent.addClass("expanded");
   placeRing(center, ring);
   applyFilters();
@@ -669,21 +777,21 @@ let current = null;  // id shown in the editable detail panel
 const SEV_COLORS = { info: "#5ABCEF", low: "#3ECFA0", medium: "#F5B942", high: "#FF6B35", critical: "#F05656" };
 const tint = c => `color:${c};background:color-mix(in srgb, ${c} 13%, var(--panel));border-color:color-mix(in srgb, ${c} 38%, var(--line))`;
 const typeBadge = t => { const c = TYPE_COLORS[t] || "#888";
-  return `<span class="node-badge" style="${tint(c)}"><span class="bdot" style="background:${c}"></span>${t}</span>`; };
+  return `<span class="node-badge" style="${tint(c)}"><span class="bdot" style="background:${c}"></span>${escapeHtml(t)}</span>`; };
 const statusChip = s => { const c = STATUS_COLORS[s] || "#888";
   return `<span class="status-chip" style="${tint(c)}"><span class="bdot" style="background:${c}"></span>${s}</span>`; };
-const sevChip = s => `<span class="sev" style="${tint(SEV_COLORS[s] || "#8B95A1")}">${s}</span>`;
+const sevChip = s => `<span class="sev" style="${tint(SEV_COLORS[s] || "#8B95A1")}">${escapeHtml(s)}</span>`;
 const sourcePills = ss => (ss || []).map(s => `<span class="source-pill"><span class="sdot"></span>${escapeHtml(s)}</span>`).join("");
 const methodClass = m => ["GET", "POST", "PUT", "DELETE"].includes(m) ? m : "OTHER";
-const statusClass = c => c ? "s" + String(c)[0] : "";
+const statusClass = c => /^[1-5]/.test(String(c ?? "")) ? "s" + String(c)[0] : "";
 const epPath = v => { const i = v.indexOf("/"); return i < 0 ? "/" : v.slice(i); };
 const fmtLen = n => n == null ? "" : (+n < 1024 ? +n + " B" : (+n / 1024).toFixed(1) + " KB");
 function epRow(x) {
   const m = (x.props.method || "GET").toUpperCase(), code = x.props.status_code;
-  return `<div class="ep-row" onclick="focusNode('${x.id}')">
-    <span class="ep-method m-${methodClass(m)}">${m}</span>
+  return `<div class="ep-row" data-focus="${escapeHtml(x.id)}">
+    <span class="ep-method m-${methodClass(m)}">${escapeHtml(m)}</span>
     <span class="ep-path">${escapeHtml(epPath(x.value))}</span>
-    <span class="ep-status ${statusClass(code)}">${code ?? ""}</span>
+    <span class="ep-status ${statusClass(code)}">${escapeHtml(code ?? "")}</span>
     <span class="ep-len">${fmtLen(x.props.content_length)}</span></div>`;
 }
 
@@ -695,7 +803,7 @@ async function showDetail(id) {
   const statusOpts = [n.status, ...(TRANSITIONS[n.status] || [])]
     .map(s => `<option value="${s}" ${s === n.status ? "selected" : ""}>${s}</option>`).join("");
   const kv = Object.entries(p).filter(([k, v]) => v !== null && v !== "" && k !== "hunt")
-    .map(([k, v]) => `<div class="kvr"><span class="k">${k}</span><span class="v">${
+    .map(([k, v]) => `<div class="kvr"><span class="k">${escapeHtml(k)}</span><span class="v">${
       escapeHtml(typeof v === "object" ? JSON.stringify(v) : String(v))}</span></div>`).join("");
   const hunt = p.hunt || "not_worked";
   const huntBtns = Object.entries(HUNT).map(([k, h]) =>
@@ -705,7 +813,7 @@ async function showDetail(id) {
   const others = d.neighbors.filter(x => x.type !== "endpoint");
   const sev = (n.type === "finding" && p.severity) ? sevChip(p.severity) : "";
   const author = n.author_type === "agent"
-    ? `<span class="author-tag">🤖 agent${n.confidence != null ? ` · ${n.confidence}` : ""}</span>` : "";
+    ? `<span class="author-tag">🤖 agent${n.confidence != null ? ` · ${escapeHtml(n.confidence)}` : ""}</span>` : "";
   document.getElementById("detailBody").innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       ${typeBadge(n.type)} ${sev}
@@ -731,10 +839,11 @@ async function showDetail(id) {
       <button class="btn primary" onclick="saveNode()">Save</button>
       <button class="btn danger" onclick="deleteNode()">Delete</button>
       ${n.type !== "finding" ? `<button class="btn" onclick="addFindingHere()">＋ finding</button>` : ""}
+      ${view === "table" ? `<button class="btn" onclick="revealInGraph(current)">show in graph</button>` : ""}
     </div>
     ${eps.length ? `<h2>Endpoints (${eps.length})</h2><div class="endpoint-list">${eps.map(epRow).join("")}</div>` : ""}
     ${others.length ? `<h2>Neighbors (${others.length})</h2>${others.map(x =>
-      `<div class="nb" onclick="focusNode('${x.id}')"><span>${escapeHtml(x.value)}</span><small>${x.type}</small></div>`).join("")}` : ""}`;
+      `<div class="nb" data-focus="${escapeHtml(x.id)}"><span>${escapeHtml(x.value)}</span><small>${escapeHtml(x.type)}</small></div>`).join("")}` : ""}`;
   pulseDetail();
   enhanceSelects(document.getElementById("detailBody"));
 }
@@ -778,6 +887,7 @@ async function saveNode() {
   if (!r.ok) { toast(`Save failed: ${(await r.json()).detail || r.status}`, "error"); return; }
   cy.getElementById(current).data({ status, tags });
   applyFilters(); refreshStats(); showDetail(current);
+  if (view === "table") { loadTable(); loadLeads(); }
 }
 
 // Hunt status is stored in props.hunt; PATCH merges props, the badge re-renders
@@ -799,11 +909,32 @@ async function deleteNode() {
   await fetch(`/node?id=${encodeURIComponent(current)}`, { method: "DELETE" });
   cy.getElementById(current).remove();
   current = null; refreshStats(); showDigest();
+  if (view === "table") loadTable();
 }
 
 function focusNode(id) {
   const el = cy.getElementById(id);
-  if (el.length) { cy.center(el); el.select(); showDetail(id); expand(id); }
+  if (view === "graph" && el.length) { cy.center(el); el.select(); showDetail(id); expand(id); }
+  else showDetail(id);     // table view, or a node not drawn yet: just inspect it
+}
+// rows in the detail panel carry their target id as data, never as inline JS
+document.getElementById("detailBody").addEventListener("click", e => {
+  const row = e.target.closest("[data-focus]");
+  if (row) focusNode(row.dataset.focus);
+});
+
+// Put a node on the canvas (if it isn't there), switch to the graph and open it.
+async function revealInGraph(id) {
+  if (!id) return;
+  if (!cy.getElementById(id).length) {
+    const d = await api(`/node?id=${encodeURIComponent(id)}`);
+    const added = addNode(d.node);
+    if (added) placeRing(centroid([]), [added]);
+    applyFilters();
+  }
+  setView("graph");
+  cy.$(":selected").unselect();
+  focusNode(id);
 }
 
 // explicit, user-initiated reorganize + fit (the "relayout" / fit button).
@@ -1223,13 +1354,13 @@ async function openImport() {
   submitBtn.textContent = "Import";
   form.innerHTML = `
     <label>Importer</label>
-    <select id="impTool">${available.map(t => `<option value="${t}">${t}</option>`).join("")}</select>
+    <select id="impTool">${available.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("")}</select>
     <label>Paste tool output</label>
     <textarea id="impData" style="min-height:170px" placeholder="paste httpx / dnsx / nmap / subfinder / … output here"></textarea>
     <label>…or choose a file</label>
     <input type="file" id="impFile" />
     <div class="hint" id="impHint" style="margin-top:6px">
-      Lands in program <b>${currentProgram}</b>. Re-imports are idempotent.</div>`;
+      Lands in program <b>${escapeHtml(currentProgram)}</b>. Re-imports are idempotent.</div>`;
   enhanceSelects(form);
   bg.classList.add("show");
   setTimeout(() => form.querySelector("#impData").focus(), 40);
@@ -1255,7 +1386,9 @@ async function openImport() {
         { method: "POST", headers: { "content-type": "text/plain" }, body: data });
       const res = await r.json();
       if (!r.ok) { hint.textContent = "Error: " + (res.detail || r.status); return; }
-      hint.innerHTML = `Imported <b>${res.nodes}</b> nodes, <b>${res.edges}</b> edges. Graph updated — import more or close.`;
+      hint.innerHTML = `Imported <b>${+res.nodes}</b> nodes (<b>${+res.new_nodes}</b> new), <b>${+res.edges}</b> edges` +
+        (res.skipped ? `, ${+res.skipped} malformed records skipped` : "") +
+        `. New assets are under Leads → “New since last import”.`;
       await loadPrograms();
       await loadGraph();
     } catch (e) { hint.textContent = "Failed: " + e; }
@@ -1274,7 +1407,7 @@ async function loadPrograms() {
   if (!names.includes(currentProgram)) names.unshift(currentProgram);
   if (!names.includes("default")) names.unshift("default");
   sel.innerHTML = [...new Set(names)].map(p =>
-    `<option value="${p}" ${p === currentProgram ? "selected" : ""}>${p}</option>`).join("") +
+    `<option value="${escapeHtml(p)}" ${p === currentProgram ? "selected" : ""}>${escapeHtml(p)}</option>`).join("") +
     `<option value="__new__">＋ New program…</option>`;
   sel._csSync && sel._csSync();   // refresh the custom-dropdown label
 }
@@ -1388,9 +1521,10 @@ async function loadGraph() {
   const d = await api(`/roots?limit=100&program=${encodeURIComponent(currentProgram)}`);
   if (!d.nodes.length) {
     document.getElementById("detailBody").innerHTML =
-      `<div class="hint">Program <b>${currentProgram}</b> is empty. Click
+      `<div class="hint">Program <b>${escapeHtml(currentProgram)}</b> is empty. Click
        <b>⤓ Import</b> in the header to paste/upload tool output, or run<br>
-       <code>rainman import httpx out.jsonl --program ${currentProgram}</code></div>`;
+       <code>rainman import httpx out.jsonl --program ${escapeHtml(currentProgram)}</code></div>`;
+    loadLeads();
     return;
   }
   const fresh = [];
@@ -1400,9 +1534,255 @@ async function loadGraph() {
   applyFilters();
   relayout();                    // one global layout to arrange the roots
   showDigest();                  // idle panel = program attack-surface overview
+  loadLeads();
+  if (view === "table") loadTable();
+}
+
+// --- leads (saved hunts with live counts) ------------------------------------
+async function loadLeads() {
+  const box = document.getElementById("leadList");
+  try {
+    const { leads } = await api(`/leads?program=${encodeURIComponent(currentProgram)}`);
+    const hits = leads.filter(l => l.count);
+    box.innerHTML = hits.length ? hits.map(l =>
+      `<div class="lead" data-q="${escapeHtml(l.query)}" title="${escapeHtml(l.why)}">
+         <span>${escapeHtml(l.name)}</span><b>${l.count.toLocaleString()}</b></div>`).join("")
+      : `<div class="hint">Nothing stands out yet.</div>`;
+  } catch (e) { box.innerHTML = `<div class="hint">Leads unavailable.</div>`; }
+}
+document.getElementById("leadList").addEventListener("click", e => {
+  const lead = e.target.closest(".lead");
+  if (lead) runTable(lead.dataset.q);
+});
+
+// --- table view --------------------------------------------------------------
+let view = "graph";
+const TV = { q: localStorage.getItem("rm_q") || "", sort: "", order: "desc",
+  offset: 0, limit: 200, total: 0, rows: [], checked: new Set(), lastImport: null };
+const TV_COLS = [
+  { label: "type", sort: "type" }, { label: "value", sort: "value" },
+  { label: "code", sort: "status_code" }, { label: "size", sort: "content_length" },
+  { label: "info" }, { label: "triage", sort: "status" }, { label: "tags" },
+  { label: "sources" }, { label: "first seen", sort: "first_seen" },
+  { label: "last seen", sort: "last_seen" },
+];
+const TV_SYNTAX = [
+  ["type:endpoint code:403", "field and prop filters (AND)"],
+  ["code:401|403", "| means OR"],
+  ["type:endpoint code:>=500", "numeric comparison"],
+  ["type:subdomain value:*stag*", "* is a wildcard"],
+  ["type:endpoint -tag:archive", "- negates a term"],
+  ["host:api.example.com", "a host and everything under it"],
+  ["type:endpoint tech:nginx", "by detected technology"],
+  ["type:parameter name:redirect*|url reflected:true", "parameter props"],
+  ["new:last", "first seen in the latest import"],
+  ["type:subdomain new:7d", "first seen in the last 7 days"],
+  ["type:subdomain stale:30d", "not seen for 30 days"],
+  ["type:ip links:>=4", "by number of connections"],
+  ["type:finding sev:high|critical", "findings by severity"],
+  ["status:untriaged source:katana", "triage status and source tool"],
+  ["has:notes", "has notes / tags / any prop"],
+  ['title:"admin panel"', "quote values with spaces"],
+];
+
+function setView(v) {
+  view = v;
+  localStorage.setItem("rm_view", v);
+  document.getElementById("cy").classList.toggle("off", v !== "graph");
+  document.getElementById("tv").classList.toggle("show", v === "table");
+  document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  if (v === "graph") cy.resize(); else loadTable();
+}
+function runTable(q) {
+  TV.q = q; TV.offset = 0; TV.checked.clear();
+  document.getElementById("tvQuery").value = q;
+  localStorage.setItem("rm_q", q);
+  if (view === "table") loadTable(); else setView("table");
+}
+function toggleSyntax() { document.getElementById("tvSyntax").classList.toggle("show"); }
+
+const ago = iso => {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return "now";
+  if (s < 5400) return Math.round(s / 60) + "m";
+  if (s < 129600) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+};
+function tvInfo(n) {
+  const p = n.props || {};
+  if (n.type === "endpoint") return [p.method, p.title, p.webserver].filter(Boolean).join(" · ");
+  if (n.type === "parameter") return [p.location, p.reflected ? "reflected" : "", p.example != null ? "e.g. " + p.example : ""].filter(Boolean).join(" · ");
+  if (n.type === "service") return [p.name, p.product, p.version].filter(Boolean).join(" ");
+  if (n.type === "finding") return [p.severity, p.kind, p.name].filter(Boolean).join(" · ");
+  if (n.type === "ip") return p.ptr || "";
+  if (n.type === "certificate") return p.issuer || "";
+  return p.cdn ? "cdn: " + p.cdn : "";
+}
+function tvRow(n) {
+  const p = n.props || {}, c = TYPE_COLORS[n.type] || "#888", sc = STATUS_COLORS[n.status] || "#888";
+  const isNew = TV.lastImport && n.first_seen >= TV.lastImport;
+  return `<tr data-id="${escapeHtml(n.id)}" class="${n.id === current ? "active" : ""}">
+    <td class="c-check"><input type="checkbox" ${TV.checked.has(n.id) ? "checked" : ""}></td>
+    <td><span class="t-type" style="color:${c}"><i style="background:${c}"></i>${escapeHtml(n.type)}</span></td>
+    <td class="c-value" title="${escapeHtml(n.value)}">${escapeHtml(n.value)}${isNew ? `<span class="t-new">NEW</span>` : ""}</td>
+    <td class="c-num ${statusClass(p.status_code)}">${escapeHtml(p.status_code ?? "")}</td>
+    <td class="c-num">${escapeHtml(fmtLen(p.content_length))}</td>
+    <td class="c-info" title="${escapeHtml(tvInfo(n))}">${escapeHtml(tvInfo(n))}</td>
+    <td><span class="t-type" style="color:${sc}"><i style="background:${sc}"></i>${escapeHtml(n.status)}</span></td>
+    <td class="c-tags">${escapeHtml((n.tags || []).join(" "))}</td>
+    <td class="c-tags">${escapeHtml((n.sources || []).join(" "))}</td>
+    <td class="c-time" title="${escapeHtml(n.first_seen)}">${ago(n.first_seen)}</td>
+    <td class="c-time" title="${escapeHtml(n.last_seen)}">${ago(n.last_seen)}</td></tr>`;
+}
+function tvHead() {
+  const all = TV.rows.length && TV.rows.every(n => TV.checked.has(n.id));
+  document.querySelector("#tvTable thead").innerHTML =
+    `<tr><th class="c-check"><input type="checkbox" id="tvAll" ${all ? "checked" : ""}></th>` +
+    TV_COLS.map(c => {
+      const on = c.sort && TV.sort === c.sort;
+      return `<th class="${c.sort ? "sortable" : ""} ${on ? "sorted" : ""}" data-sort="${c.sort || ""}">${
+        c.label}${on ? (TV.order === "asc" ? " ↑" : " ↓") : ""}</th>`;
+    }).join("") + `</tr>`;
+}
+function tvBulkBar() {
+  document.getElementById("tvSelCount").textContent = TV.checked.size;
+  document.getElementById("tvBulk").classList.toggle("show", TV.checked.size > 0);
+}
+function tvParams(extra) {
+  const p = new URLSearchParams({ q: TV.q, program: currentProgram, order: TV.order, ...extra });
+  if (TV.sort) p.set("sort", TV.sort);
+  return p;
+}
+async function loadTable() {
+  const input = document.getElementById("tvQuery"), empty = document.getElementById("tvEmpty");
+  const body = document.querySelector("#tvTable tbody");
+  if (input.value !== TV.q) input.value = TV.q;
+  let d;
+  try {
+    const [r, imp] = await Promise.all([
+      fetch("/nodes?" + tvParams({ limit: TV.limit, offset: TV.offset })),
+      api(`/imports?limit=1&program=${encodeURIComponent(currentProgram)}`),
+    ]);
+    d = await r.json();
+    TV.lastImport = imp.imports.length ? imp.imports[0].started_at : null;
+    if (!r.ok) throw new Error(d.detail || r.status);
+  } catch (e) {
+    input.classList.add("bad");
+    TV.rows = []; TV.total = 0; body.innerHTML = ""; tvHead();
+    empty.className = "tv-empty error"; empty.textContent = "Query error: " + e.message;
+    document.getElementById("tvCount").textContent = "";
+    return;
+  }
+  input.classList.remove("bad");
+  TV.rows = d.nodes; TV.total = d.total;
+  tvHead();
+  body.innerHTML = d.nodes.map(tvRow).join("");
+  empty.className = "tv-empty";
+  empty.textContent = d.nodes.length ? "" : (TV.q
+    ? "No matches. Check the syntax panel, or clear the query to list everything."
+    : "This program is empty — import some recon output first.");
+  const from = d.total ? TV.offset + 1 : 0, to = TV.offset + d.nodes.length;
+  document.getElementById("tvCount").textContent =
+    `${from.toLocaleString()}–${to.toLocaleString()} of ${d.total.toLocaleString()}`;
+  document.getElementById("tvPrev").disabled = TV.offset === 0;
+  document.getElementById("tvNext").disabled = to >= d.total;
+  tvBulkBar();
+}
+function tvPage(dir) {
+  TV.offset = Math.max(0, TV.offset + dir * TV.limit);
+  loadTable();
+  document.querySelector(".tv-scroll").scrollTop = 0;
+}
+function exportTable(format) {
+  window.open("/nodes?" + tvParams({ limit: 100000, format }), "_blank", "noopener");
+}
+function tvClear() { TV.checked.clear(); loadTable(); }
+
+async function tvSetStatus(status) {
+  if (!status || !TV.checked.size) return;
+  const res = await post("/bulk/status", { ids: [...TV.checked], status });
+  res.updated.forEach(id => cy.getElementById(id).data({ status }));
+  toast(`${res.updated.length} set to ${status}` +
+    (res.skipped.length ? ` · ${res.skipped.length} skipped (illegal transition)` : ""),
+    res.skipped.length ? "error" : "ok");
+  const bs = document.getElementById("tvBulkStatus"); bs.value = ""; bs._csSync && bs._csSync();
+  TV.checked.clear(); refreshStats(); loadLeads(); loadTable();
+}
+async function tvTag() {
+  const ids = [...TV.checked];
+  const res = await openModal({ title: `Tag ${ids.length} node(s)`,
+    fields: [{ name: "tag", label: "Tag", placeholder: "e.g. auth" }], submitLabel: "Add tag" });
+  if (!res || !res.tag) return;
+  await post("/bulk/status", { ids, add_tags: [res.tag] });
+  loadTable();
+}
+async function tvFinding() {
+  const node = await createFinding([...TV.checked]);
+  if (!node) return;
+  toast("Finding created and linked.", "ok");
+  TV.checked.clear(); refreshStats(); loadLeads(); loadTable(); showDetail(node.id);
+}
+function tvToGraph() {
+  const picked = TV.rows.filter(n => TV.checked.has(n.id));
+  const fresh = [];
+  picked.forEach(n => { const a = addNode(n); if (a) fresh.push(a); });
+  placeRing(centroid([]), fresh);
+  applyFilters();
+  setView("graph");
+  cy.$(":selected").unselect();
+  const eles = cy.collection(picked.map(n => cy.getElementById(n.id)));
+  eles.select();
+  if (eles.length) cy.animate({ fit: { eles, padding: 80 }, duration: 300 });
+}
+
+function initTable() {
+  document.getElementById("tvSyntax").innerHTML = TV_SYNTAX.map(([q, what]) =>
+    `<div><code data-q="${escapeHtml(q)}">${escapeHtml(q)}</code> — ${escapeHtml(what)}</div>`).join("");
+  document.getElementById("tvSyntax").addEventListener("click", e => {
+    if (e.target.dataset.q) runTable(e.target.dataset.q);
+  });
+  document.getElementById("viewSeg").addEventListener("click", e => {
+    if (e.target.dataset.view) setView(e.target.dataset.view);
+  });
+  const input = document.getElementById("tvQuery");
+  input.value = TV.q;
+  input.addEventListener("keydown", e => { if (e.key === "Enter") runTable(input.value.trim()); });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "/" || view !== "table" || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    e.preventDefault(); input.focus(); input.select();
+  });
+  const bs = document.getElementById("tvBulkStatus");
+  bs.innerHTML += STATUSES.map(s => `<option value="${s}">${s}</option>`).join("");
+  bs.addEventListener("change", () => tvSetStatus(bs.value));
+
+  const table = document.getElementById("tvTable");
+  table.querySelector("thead").addEventListener("click", e => {
+    if (e.target.id === "tvAll") {
+      TV.rows.forEach(n => e.target.checked ? TV.checked.add(n.id) : TV.checked.delete(n.id));
+      loadTable(); return;
+    }
+    const th = e.target.closest("th.sortable");
+    if (!th) return;
+    if (TV.sort === th.dataset.sort) TV.order = TV.order === "asc" ? "desc" : "asc";
+    else { TV.sort = th.dataset.sort; TV.order = "asc"; }
+    TV.offset = 0; loadTable();
+  });
+  table.querySelector("tbody").addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-id]");
+    if (!tr) return;
+    const id = tr.dataset.id;
+    if (e.target.matches("input[type=checkbox]")) {
+      e.target.checked ? TV.checked.add(id) : TV.checked.delete(id);
+      tvBulkBar(); tvHead(); return;
+    }
+    table.querySelectorAll("tr.active").forEach(r => r.classList.remove("active"));
+    tr.classList.add("active");
+    showDetail(id);
+  });
 }
 
 async function init() {
+  initTable();
   buildTypeFilters();
   initResizers();
   initToolbarDrag();
@@ -1418,6 +1798,7 @@ async function init() {
   document.getElementById("programSelect").addEventListener("change", onProgramChange);
   enhanceSelects();              // restyle all header/left/toolbar dropdowns
   await loadGraph();
+  if (localStorage.getItem("rm_view") === "table") setView("table");
 }
 init();
 </script>

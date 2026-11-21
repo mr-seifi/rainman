@@ -1,0 +1,627 @@
+<title>rainman</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  /* Layout: a hunter's workbench read top to bottom — the live graph opens the
+     page, then each section is one working surface (ingest, query, triage). Flat
+     panels with 1px borders, mono for data and sans for prose, per DESIGN.md. */
+  :root {
+    color-scheme: dark;
+    --bg: #0D0F10; --panel: #111416; --raised: #1C2026; --line: #1E2530; --line-hi: #2A3444;
+    --fg: #E8EDF2; --fg-2: #8B95A1; --fg-3: #5C6675; --live: #22FF8F; --live-ink: #0D0F10;
+    --t-program: #22FF8F; --t-domain: #60A8FF; --t-subdomain: #4A9EFF; --t-ip: #F5B942;
+    --t-service: #3ECFA0; --t-endpoint: #8B7CF8; --t-parameter: #B09EFA; --t-technology: #E07070;
+    --t-certificate: #5ABCEF; --t-finding: #F05656; --t-functionality: #FF6B35;
+    --s-untriaged: #8B95A1; --s-in_scope: #22FF8F; --s-testing: #4A9EFF; --s-flagged: #FF6B35;
+    --s-confirmed: #F05656; --s-done: #6070A0; --s-ignored: #566070; --s-out_of_scope: #566070;
+    --mono: 'JetBrains Mono', 'Fira Mono', 'Cascadia Code', 'Courier New', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --r: 6px; --r-lg: 10px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg: #F3F5F8; --panel: #FFFFFF; --raised: #EDF0F4; --line: #D9DEE6; --line-hi: #BCC4D0;
+      --fg: #18202B; --fg-2: #556070; --fg-3: #8590A0; --live: #0B7A45; --live-ink: #FFFFFF;
+      --t-program: #0B7A45; --t-domain: #1F6FD0; --t-subdomain: #2B7FE0; --t-ip: #B07A08;
+      --t-service: #128C68; --t-endpoint: #5B4BD6; --t-parameter: #7A63E0; --t-technology: #C04848;
+      --t-certificate: #1C86BC; --t-finding: #D03535; --t-functionality: #D2501C;
+      --s-untriaged: #6B7685; --s-in_scope: #0B7A45; --s-testing: #1F6FD0; --s-flagged: #D2501C;
+      --s-confirmed: #D03535; --s-done: #55628F; --s-ignored: #8A93A1; --s-out_of_scope: #8A93A1;
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #F3F5F8; --panel: #FFFFFF; --raised: #EDF0F4; --line: #D9DEE6; --line-hi: #BCC4D0;
+    --fg: #18202B; --fg-2: #556070; --fg-3: #8590A0; --live: #0B7A45; --live-ink: #FFFFFF;
+    --t-program: #0B7A45; --t-domain: #1F6FD0; --t-subdomain: #2B7FE0; --t-ip: #B07A08;
+    --t-service: #128C68; --t-endpoint: #5B4BD6; --t-parameter: #7A63E0; --t-technology: #C04848;
+    --t-certificate: #1C86BC; --t-finding: #D03535; --t-functionality: #D2501C;
+    --s-untriaged: #6B7685; --s-in_scope: #0B7A45; --s-testing: #1F6FD0; --s-flagged: #D2501C;
+    --s-confirmed: #D03535; --s-done: #55628F; --s-ignored: #8A93A1; --s-out_of_scope: #8A93A1;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 72px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; flex-direction: column; gap: 72px; }
+  h1, h2, h3, p { margin: 0; }
+  h1 { font: 700 clamp(38px, 7vw, 64px)/1 var(--mono); letter-spacing: -0.03em; }
+  h1 span { color: var(--live); }
+  h2 { font: 600 clamp(22px, 3.2vw, 28px)/1.2 var(--mono); letter-spacing: -0.01em; text-wrap: balance; }
+  .eyebrow { font: 600 10px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
+  .lede { color: var(--fg-2); max-width: 62ch; }
+  .mono { font-family: var(--mono); }
+  section { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .head { display: flex; flex-direction: column; gap: 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); min-width: 0; }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+
+  /* top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .brand { font: 700 16px var(--mono); }
+  .brand span { color: var(--live); }
+  .bar nav { display: flex; gap: 18px; flex-wrap: wrap; font: 500 12px var(--mono); }
+  .bar a { color: var(--fg-2); text-decoration: none; }
+  .bar a:hover { color: var(--live); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 8fr); gap: 32px; align-items: start; }
+  .hero-text { display: flex; flex-direction: column; gap: 18px; padding-top: 8px; }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .fact { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+  .fact b { display: block; font: 600 20px/1.2 var(--mono); }
+  .fact span { font: 400 10px var(--mono); color: var(--fg-2); }
+  .stage { display: flex; flex-direction: column; }
+  .stage-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .stage-head .hint { font: 400 11px var(--mono); color: var(--fg-2); }
+  .ghost { background: none; border: 1px solid var(--line); border-radius: var(--r); padding: 5px 10px;
+    font: 500 11px var(--mono); color: var(--fg-2); cursor: pointer; }
+  .ghost:hover { border-color: var(--live); color: var(--live); }
+  #graph { display: block; width: 100%; height: auto; touch-action: manipulation; }
+  #graph .edge { stroke: var(--line-hi); stroke-width: 1; fill: none; }
+  #graph .edge.hl { stroke: var(--fg-2); stroke-width: 1.6; }
+  #graph .node { cursor: pointer; }
+  #graph .node text { font: 500 9.5px var(--mono); fill: var(--fg-2); pointer-events: none; }
+  #graph .node.sel text { fill: var(--fg); font-weight: 700; }
+  #graph .node.dim { opacity: .28; }
+  #graph .ring { fill: none; stroke: var(--fg); stroke-width: 1.5; }
+  #graph .more { fill: var(--panel); stroke: var(--line-hi); stroke-width: 1; }
+  #graph .more-t { font: 600 7px var(--mono); fill: var(--fg-2); pointer-events: none; }
+  .detail { border-top: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-height: 118px; }
+  .detail .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .detail .val { font: 600 13px var(--mono); word-break: break-all; }
+  .detail .id { font: 400 11px var(--mono); color: var(--fg-2); word-break: break-all; }
+  .kv { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 400 11px var(--mono); color: var(--fg-2); }
+  .kv b { color: var(--fg); font-weight: 500; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 10px 14px; border-top: 1px solid var(--line);
+    font: 400 10px var(--mono); color: var(--fg-2); }
+  .legend i, .badge i, .chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+
+  /* shared chips */
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: var(--r);
+    font: 500 11px var(--mono); border: 1px solid color-mix(in srgb, var(--c) 38%, var(--line));
+    background: color-mix(in srgb, var(--c) 11%, var(--panel)); color: color-mix(in srgb, var(--c) 68%, var(--fg)); white-space: nowrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 20px;
+    font: 500 11px var(--mono); border: 1px solid color-mix(in srgb, var(--c) 38%, var(--line));
+    background: color-mix(in srgb, var(--c) 11%, var(--panel)); color: color-mix(in srgb, var(--c) 68%, var(--fg)); white-space: nowrap; }
+  .pill { font: 400 10px var(--mono); color: var(--fg-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+
+  /* ingest */
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tool { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 6px 11px;
+    font: 500 12px var(--mono); color: var(--fg-2); cursor: pointer; }
+  .tool:hover { border-color: var(--line-hi); color: var(--fg); }
+  .tool[aria-pressed="true"] { border-color: var(--live); color: var(--live); }
+  .ingest { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ingest > div { padding: 14px 16px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .ingest > div + div { border-left: 1px solid var(--line); }
+  pre { margin: 0; font: 400 11.5px/1.9 var(--mono); color: var(--fg); overflow-x: auto; white-space: pre; }
+  .yield { display: flex; flex-direction: column; gap: 6px; }
+  .yield div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 400 12px var(--mono); }
+  .yield .via { color: var(--fg-3); font-size: 11px; }
+  .note { font-size: 13px; color: var(--fg-2); }
+
+  /* query */
+  .query { display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+  .leads { border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .lead { display: flex; justify-content: space-between; gap: 8px; align-items: center; width: 100%; text-align: left;
+    background: none; border: 1px solid transparent; border-radius: var(--r); padding: 6px 8px; font-size: 13px; cursor: pointer; }
+  .lead:hover, .lead[aria-pressed="true"] { border-color: var(--line-hi); background: var(--raised); }
+  .lead b { font: 500 11px var(--mono); color: var(--live); }
+  .qmain { display: flex; flex-direction: column; min-width: 0; }
+  .qbar { padding: 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  #q { width: 100%; padding: 9px 11px; font: 400 13px var(--mono); color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: var(--r); }
+  #q.bad { border-color: var(--t-finding); }
+  .qmeta { font: 400 11px var(--mono); color: var(--fg-2); min-height: 16px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 7px 12px; font: 600 10px var(--sans); letter-spacing: .08em; text-transform: uppercase;
+    color: var(--fg-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 6px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; font-family: var(--mono); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.v { color: var(--fg); } td.n { color: var(--fg-2); font-variant-numeric: tabular-nums; }
+  td.c2 { color: var(--s-in_scope); } td.c3 { color: var(--s-testing); } td.c4 { color: var(--s-flagged); } td.c5 { color: var(--s-confirmed); }
+  .new { margin-left: 6px; font: 600 9px var(--mono); color: var(--live); border: 1px solid color-mix(in srgb, var(--live) 40%, var(--line)); border-radius: 4px; padding: 0 4px; }
+  .syntax { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 20px; font-size: 13px; color: var(--fg-2); }
+  .syntax button { background: none; border: none; padding: 0; font: 500 12px var(--mono); color: var(--fg); cursor: pointer; text-align: left; }
+  .syntax button:hover { color: var(--live); }
+
+  /* triage */
+  .states { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
+  .state { cursor: pointer; background: none; border: none; padding: 0; opacity: .32; }
+  .state.on, .state.next { opacity: 1; }
+  .state.on .chip { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; }
+  .state-note { padding: 0 16px 16px; font-size: 13px; color: var(--fg-2); }
+  .state-note b { color: var(--fg); font: 500 12px var(--mono); }
+
+  /* architecture */
+  .arch { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.25fr) auto minmax(0, 1fr); gap: 12px; align-items: stretch; }
+  .arch .col { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .arch .core { border-color: var(--live); }
+  .arch h3 { font: 600 13px var(--mono); }
+  .arch ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--fg-2); }
+  .arch li code { font: 500 11.5px var(--mono); color: var(--fg); }
+  .arrow { display: flex; align-items: center; font: 400 16px var(--mono); color: var(--fg-3); }
+
+  /* verified */
+  .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .check { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .check b { font: 600 20px/1.2 var(--mono); }
+  .check span { font-size: 13px; color: var(--fg-2); }
+  .cli { position: relative; padding: 14px 16px; }
+  .cli .copy { position: absolute; top: 10px; right: 10px; }
+  .cli .p { color: var(--fg-3); } .cli .c { color: var(--fg-3); }
+  .todo { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 24px; font-size: 13px; color: var(--fg-2); margin: 0; padding: 0; list-style: none; }
+  .todo b { color: var(--fg); font-weight: 600; }
+  footer { font: 400 11px var(--mono); color: var(--fg-3); }
+
+  @media (max-width: 860px) {
+    .hero, .ingest, .query { grid-template-columns: minmax(0, 1fr); }
+    .ingest > div + div { border-left: none; border-top: 1px solid var(--line); }
+    .leads { border-right: none; border-bottom: 1px solid var(--line); }
+    .arch { grid-template-columns: minmax(0, 1fr); }
+    .arrow { justify-content: center; transform: rotate(90deg); }
+    .wrap { gap: 56px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">rain<span>man</span></div>
+    <nav>
+      <a href="#ingest">ingest</a><a href="#query">query</a><a href="#triage">triage</a><a href="#inside">inside</a><a href="#verified">verified</a>
+    </nav>
+  </header>
+
+  <section class="hero" style="gap:32px">
+    <div class="hero-text">
+      <div class="eyebrow">Recon asset manager for bug hunters</div>
+      <h1>rain<span>man</span></h1>
+      <p class="lede">Your recon tools each write their own flat file. rainman merges all of them into one deduplicated graph of the attack surface, then lets you query it, triage it, and pipe results back into your tools.</p>
+      <div class="facts">
+        <div class="fact"><b>13</b><span>tool importers</span></div>
+        <div class="fact"><b>12</b><span>node types</span></div>
+        <div class="fact"><b>11</b><span>edge types</span></div>
+      </div>
+      <p class="note">The graph on this page is a small example target, <span class="mono">example.com</span>, built from the same model the app uses. Nothing here is real scan data.</p>
+    </div>
+    <div class="panel stage">
+      <div class="stage-head">
+        <span class="hint">Click a node to expand or collapse its neighbours</span>
+        <span style="display:flex;gap:6px"><button class="ghost" id="expandAll">expand all</button><button class="ghost" id="resetGraph">reset</button></span>
+      </div>
+      <svg id="graph" viewBox="0 0 760 460" role="img" aria-label="Interactive example attack-surface graph"></svg>
+      <div class="detail" id="detail"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </section>
+
+  <section id="ingest">
+    <div class="head">
+      <div class="eyebrow">Ingest</div>
+      <h2>One line of tool output becomes nodes and edges</h2>
+      <p class="lede">Each importer is a pure parser. Everything it emits goes through one write path, so import order does not matter, re-importing never duplicates, and an import either lands completely or not at all.</p>
+    </div>
+    <div class="tools" id="tools" role="group" aria-label="Choose a tool"></div>
+    <div class="panel ingest">
+      <div><div class="eyebrow">Tool output</div><pre id="raw"></pre></div>
+      <div><div class="eyebrow">Becomes</div><div class="yield" id="yield"></div><p class="note" id="toolNote"></p></div>
+    </div>
+  </section>
+
+  <section id="query">
+    <div class="head">
+      <div class="eyebrow">Query</div>
+      <h2>Ask the attack surface a question</h2>
+      <p class="lede">One query language runs in the table view, on the command line and over HTTP. Leads are saved queries with live counts. Try it against the example target.</p>
+    </div>
+    <div class="panel query">
+      <div class="leads" id="leads" role="group" aria-label="Leads"></div>
+      <div class="qmain">
+        <div class="qbar">
+          <input id="q" spellcheck="false" autocomplete="off" aria-label="Query" />
+          <div class="qmeta" id="qmeta"></div>
+        </div>
+        <div class="tablewrap"><table><thead><tr><th>type</th><th>value</th><th>code</th><th>info</th><th>triage</th><th>sources</th></tr></thead><tbody id="rows"></tbody></table></div>
+      </div>
+    </div>
+    <div class="syntax" id="syntax"></div>
+  </section>
+
+  <section id="triage">
+    <div class="head">
+      <div class="eyebrow">Triage</div>
+      <h2>Every asset carries a status, and only legal moves are allowed</h2>
+      <p class="lede">Status lives on the node next to your tags, notes and findings. The same rules apply in the UI, in bulk actions and to anything written through the API. Pick a status to see where it can go next.</p>
+    </div>
+    <div class="panel">
+      <div class="states" id="states" role="group" aria-label="Triage statuses"></div>
+      <div class="state-note" id="stateNote"></div>
+    </div>
+  </section>
+
+  <section id="inside">
+    <div class="head">
+      <div class="eyebrow">Inside</div>
+      <h2>A small core with adapters around it</h2>
+      <p class="lede">The core knows nothing about tools, HTTP or the database. That keeps deduplication in one place and makes a new importer a single file.</p>
+    </div>
+    <div class="arch">
+      <div class="panel col"><h3>in</h3><ul>
+        <li><code>13 importers</code> tool output to ops</li>
+        <li><code>rainman</code> CLI</li>
+        <li><code>HTTP API</code> FastAPI</li>
+        <li><code>graph + table UI</code> one HTML file</li></ul></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="panel col core"><h3>domain core</h3><ul>
+        <li><code>identity</code> normalise hosts, IPs, URLs into one key</li>
+        <li><code>ingest</code> merge a batch, link hosts to their apex, one transaction</li>
+        <li><code>query</code> the query language and the leads</li>
+        <li><code>model</code> node and edge types, status rules</li></ul></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="panel col"><h3>store</h3><ul>
+        <li><code>GraphRepository</code> the port</li>
+        <li><code>SQLite</code> one local file, WAL</li>
+        <li><code>import log</code> powers <code>new:last</code></li></ul></div>
+    </div>
+  </section>
+
+  <section id="verified">
+    <div class="head">
+      <div class="eyebrow">Verified</div>
+      <h2>What has been tested</h2>
+    </div>
+    <div class="checks">
+      <div class="panel check"><b>98 / 98</b><span>automated tests pass, covering every importer, the query language, ingest guarantees, the CLI and the API.</span></div>
+      <div class="panel check"><b>4,900+</b><span>malformed imports and hostile queries sent at the API. None caused a server error.</span></div>
+      <div class="panel check"><b>40+</b><span>UI checks in a real headless browser across the graph and table views, including a crafted URL that must not run script.</span></div>
+      <div class="panel check"><b>1,840 URLs/s</b><span>import rate on a 20,000 URL archive dump. 100,000 URLs (300,000 nodes) took 65 seconds.</span></div>
+    </div>
+    <p class="note">Also checked: the Docker image builds and serves, a database from the previous version migrates in place, and the packaged wheel includes the UI. Not checked: output captured from live tool runs. The importer samples follow each tool's documented format.</p>
+    <div class="panel cli">
+      <button class="ghost copy" id="copy">copy</button>
+<pre id="cli"><span class="p">$</span> pip install -e .
+<span class="p">$</span> rainman import httpx httpx.jsonl      <span class="c"># prints how many assets are new</span>
+<span class="p">$</span> rainman leads                         <span class="c"># where to look next</span>
+<span class="p">$</span> rainman query 'type:endpoint code:401|403' | your-tool
+<span class="p">$</span> rainman serve                         <span class="c"># graph + table UI on localhost:8000</span></pre>
+    </div>
+    <div class="head"><div class="eyebrow">Not built yet</div></div>
+    <ul class="todo">
+      <li><b>Burp extension</b> to push live traffic into the graph.</li>
+      <li><b>Agent surface (MCP)</b> so an agent can read leads and write findings.</li>
+      <li><b>Undo and audit log</b> for edits.</li>
+      <li><b>Clustering and WebGL</b> for very large graphs.</li>
+    </ul>
+  </section>
+
+  <footer>rainman 0.1.0 · example data only</footer>
+</div>
+
+<script>
+(() => {
+  const TYPES = ["domain","subdomain","ip","service","endpoint","parameter","technology","certificate","finding","functionality"];
+  const PREFIX = { domain:"dom", subdomain:"sub", ip:"ip", service:"svc", endpoint:"ep", parameter:"param",
+    technology:"tech", certificate:"cert", finding:"finding", functionality:"func" };
+  const SIZE = { domain:11, functionality:9, ip:8, subdomain:7, certificate:7, finding:7, service:6, technology:6, endpoint:5.5, parameter:4.5 };
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const badge = t => `<span class="badge" style="--c:var(--t-${t})"><i style="background:var(--t-${t})"></i>${t}</span>`;
+  const chip = s => `<span class="chip" style="--c:var(--s-${s})"><i style="background:var(--s-${s})"></i>${s}</span>`;
+
+  // ---- example target -------------------------------------------------------
+  const NODES = [], BY = {};
+  const n = (type, value, props = {}, o = {}) => {
+    const id = PREFIX[type] + ":" + value.toLowerCase().replace(/^https?:\/\//, m => type === "finding" ? m : "");
+    const node = { id, type, value, props, status: o.status || "untriaged", tags: o.tags || [], sources: o.src || [], isNew: !!o.isNew, notes: o.notes || "" };
+    NODES.push(node); BY[id] = node; return id;
+  };
+  const dom = n("domain", "example.com", {}, { src: ["subfinder"] });
+  const H = {};
+  [["api", ["subfinder","dnsx","httpx","katana"], { status: "in_scope", tags: ["auth"] }],
+   ["admin", ["subfinder","httpx"], {}], ["dev", ["dnsx","httpx"], { status: "flagged", notes: "exposed git metadata" }],
+   ["shop", ["subfinder","httpx","gau"], {}], ["jenkins", ["subfinder","httpx"], { isNew: true }]]
+    .forEach(([h, src, o]) => H[h] = n("subdomain", h + ".example.com", h === "shop" ? { cdn: "cloudflare" } : {}, { src, ...o }));
+  const ip10 = n("ip", "203.0.113.10", { ptr: "lb1.example.com" }, { src: ["dnsx","httpx","naabu","nmap"] });
+  const ip11 = n("ip", "203.0.113.11", {}, { src: ["dnsx","nmap"] });
+  const ip12 = n("ip", "203.0.113.12", {}, { src: ["httpx","naabu"], isNew: true });
+  const S = [
+    [ip10, n("service", "203.0.113.10:443/tcp", { port: 443, protocol: "tcp", state: "open", name: "https", product: "nginx" }, { src: ["naabu","nmap"] })],
+    [ip10, n("service", "203.0.113.10:22/tcp", { port: 22, protocol: "tcp", state: "open", name: "ssh", product: "OpenSSH", version: "8.9" }, { src: ["nmap"] })],
+    [ip11, n("service", "203.0.113.11:6379/tcp", { port: 6379, protocol: "tcp", state: "open", name: "redis" }, { src: ["nmap"] })],
+    [ip12, n("service", "203.0.113.12:8080/tcp", { port: 8080, protocol: "tcp", state: "open" }, { src: ["naabu"], isNew: true })],
+  ];
+  const ep = (host, path, props, o) => [H[host], n("endpoint", host + ".example.com" + path, { scheme: "https", ...props }, o)];
+  const EP = {
+    users: ep("api", "/v2/users", { method: "GET", status_code: 200, content_length: 5120, title: "Users API" }, { src: ["httpx","katana"], status: "testing" }),
+    admin: ep("api", "/admin", { status_code: 403, content_length: 153 }, { src: ["httpx","ffuf"], tags: ["content-discovery"] }),
+    login: ep("api", "/login", { status_code: 200, title: "Sign in" }, { src: ["httpx"] }),
+    go: ep("api", "/go", { method: "POST", status_code: 302, crawl_source: "https://api.example.com/app.js" }, { src: ["katana"], tags: ["crawled","js-sourced"] }),
+    root: ep("admin", "/", { status_code: 401, title: "Restricted" }, { src: ["httpx"] }),
+    git: ep("dev", "/.git/config", { status_code: 200, content_length: 92 }, { src: ["httpx","nuclei"], status: "flagged" }),
+    debug: ep("dev", "/debug", { status_code: 500, status_code_history: [{ code: 404 }] }, { src: ["httpx"] }),
+    item: ep("shop", "/item", {}, { src: ["gau"], tags: ["archive"] }),
+    old: ep("shop", "/old.php", { scheme: "http" }, { src: ["gau","waybackurls"], tags: ["archive"] }),
+    cart: ep("shop", "/cart", { status_code: 200, title: "Cart" }, { src: ["httpx"] }),
+    script: ep("jenkins", "/script", { status_code: 403, title: "Jenkins" }, { src: ["httpx"], isNew: true }),
+  };
+  const par = (e, name, props, src) => [EP[e][1], n("parameter", BY[EP[e][1]].value + "#" + name, { name, location: "query", ...props }, { src })];
+  const P = [par("go", "redirect_uri", { example: "/home" }, ["katana"]), par("users", "id", { example: "7" }, ["katana"]),
+    par("users", "debug", { reflected: true }, ["x8"]), par("item", "id", { example: "1" }, ["gau"]), par("old", "file", { example: "a.txt" }, ["waybackurls"])];
+  const T = {}; ["nginx","Node.js","PHP","Jenkins"].forEach(t => T[t] = n("technology", t, {}, { src: ["httpx"] }));
+  const cert = n("certificate", "*.example.com", { issuer: "R3", sans: 3 }, { src: ["httpx"] });
+  const f1 = n("finding", "git-config @ https://dev.example.com/.git/config", { kind: "suspected", severity: "medium", template_id: "git-config" }, { src: ["nuclei"], tags: ["exposure","git","medium"] });
+  const f2 = n("finding", "redis-unauth @ 203.0.113.11:6379", { kind: "suspected", severity: "high", template_id: "redis-unauth" }, { src: ["nuclei"], tags: ["network","high"], isNew: true });
+  const f3 = n("finding", "IDOR on /v2/users", { kind: "intuition" }, { src: ["manual"], status: "flagged", notes: "id is sequential" });
+  const fn = n("functionality", "auth flow", { name: "auth flow" }, { src: ["manual"] });
+
+  const EDGES = [];
+  const e = (type, a, b) => EDGES.push({ type, a, b });
+  Object.values(H).forEach(h => e("subdomain_of", h, dom));
+  [["api", ip10], ["admin", ip10], ["shop", ip10], ["dev", ip11], ["jenkins", ip12]].forEach(([h, ip]) => e("resolves_to", H[h], ip));
+  S.forEach(([ip, s]) => e("runs_service", ip, s));
+  Object.values(EP).forEach(([h, x]) => e("has_endpoint", h, x));
+  P.forEach(([x, p]) => e("has_param", x, p));
+  [["api","nginx"],["api","Node.js"],["admin","nginx"],["shop","PHP"],["shop","nginx"],["jenkins","Jenkins"]].forEach(([h, t]) => e("uses_tech", H[h], T[t]));
+  ["api","admin","shop"].forEach(h => e("shares_cert", H[h], cert));
+  e("affects", f1, EP.git[1]); e("affects", f2, ip11); e("affects", f3, EP.users[1]); e("affects", f3, P[1][1]);
+  e("part_of", EP.login[1], fn); e("part_of", EP.go[1], fn);
+  const ADJ = {}; NODES.forEach(x => ADJ[x.id] = []);
+  EDGES.forEach(x => { ADJ[x.a].push(x.b); ADJ[x.b].push(x.a); });
+
+  // ---- graph ---------------------------------------------------------------
+  const svg = document.getElementById("graph"), W = 760, Hh = 460, NS = "http://www.w3.org/2000/svg";
+  const pos = {}; let expanded, selected, raf = 0, heat = 0;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const label = x => x.type === "endpoint" ? x.value.slice(x.value.indexOf("/")) : x.type === "parameter" ? "?" + x.props.name
+    : x.type === "subdomain" ? x.value.replace(".example.com", "") : x.type === "service" ? ":" + x.props.port
+    : x.type === "finding" ? x.value.split(" @ ")[0] : x.value;
+  function visibleSet() {
+    const vis = new Set([dom]); let grew = true;
+    while (grew) { grew = false; for (const id of [...vis]) if (expanded.has(id)) for (const m of ADJ[id]) if (!vis.has(m)) { vis.add(m); grew = true; } }
+    return vis;
+  }
+  function seed(vis) {
+    let k = 0;
+    for (const id of vis) if (!pos[id]) {
+      const parent = ADJ[id].find(m => pos[m]); const a = (k++ * 2.399963) + id.length;
+      const c = parent ? pos[parent] : { x: W / 2, y: Hh / 2 };
+      pos[id] = { x: c.x + 34 * Math.cos(a), y: c.y + 34 * Math.sin(a), vx: 0, vy: 0 };
+    }
+  }
+  function tick(vis) {
+    const ids = [...vis];
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const a = pos[ids[i]], b = pos[ids[j]]; let dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = Math.max(dx * dx + dy * dy, 60), f = 9000 / d2, d = Math.sqrt(d2);
+      dx = dx / d * f; dy = dy / d * f; a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
+    }
+    for (const x of EDGES) if (vis.has(x.a) && vis.has(x.b)) {
+      const a = pos[x.a], b = pos[x.b], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+      const L = x.type === "has_param" ? 52 : x.type === "subdomain_of" ? 128 : 92, f = (d - L) * 0.05;
+      a.vx += dx / d * f; a.vy += dy / d * f; b.vx -= dx / d * f; b.vy -= dy / d * f;
+    }
+    for (const id of ids) {
+      const p = pos[id]; p.vx += (W / 2 - p.x) * 0.003; p.vy += (Hh / 2 - p.y) * 0.006;
+      p.vx *= 0.8; p.vy *= 0.8; p.x = Math.min(W - 64, Math.max(26, p.x + p.vx)); p.y = Math.min(Hh - 24, Math.max(16, p.y + p.vy));
+    }
+  }
+  function draw(vis) {
+    const near = selected && vis.has(selected) ? new Set([selected, ...ADJ[selected]]) : null;
+    let out = "";
+    for (const x of EDGES) if (vis.has(x.a) && vis.has(x.b)) {
+      const a = pos[x.a], b = pos[x.b], hl = near && (x.a === selected || x.b === selected);
+      out += `<line class="edge${hl ? " hl" : ""}" x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"><title>${x.type}</title></line>`;
+    }
+    for (const id of vis) {
+      const x = BY[id], p = pos[id], r = SIZE[x.type], hidden = ADJ[id].filter(m => !vis.has(m)).length;
+      const cls = "node" + (id === selected ? " sel" : "") + (near && !near.has(id) ? " dim" : "");
+      out += `<g class="${cls}" data-id="${esc(id)}" tabindex="0" role="button" aria-label="${esc(x.type + " " + x.value)}" transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})">`
+        + `<circle r="${r}" fill="var(--t-${x.type})" stroke="var(--s-${x.status})" stroke-width="2.2"></circle>`
+        + (id === selected ? `<circle class="ring" r="${r + 4}"></circle>` : "")
+        + (hidden ? `<circle class="more" cx="${r + 2}" cy="${-r - 1}" r="6"></circle><text class="more-t" x="${r + 2}" y="${-r + 1.5}" text-anchor="middle">+${hidden}</text>` : "")
+        + `<text x="${r + 5}" y="3.5">${esc(label(x))}</text><title>${esc(x.type + ": " + x.value)}</title></g>`;
+    }
+    svg.innerHTML = out;
+  }
+  function run(steps) {
+    const vis = visibleSet(); seed(vis); cancelAnimationFrame(raf);
+    if (reduce || steps) { for (let i = 0; i < (steps || 260); i++) tick(vis); draw(vis); return; }
+    heat = 150;
+    const frame = () => { tick(vis); tick(vis); draw(vis); if (--heat > 0) raf = requestAnimationFrame(frame); };
+    frame();
+  }
+  function showDetail() {
+    const x = BY[selected], el = document.getElementById("detail");
+    const kv = Object.entries(x.props).filter(([k]) => k !== "status_code_history").map(([k, v]) => `<span>${esc(k)} <b>${esc(v)}</b></span>`).join("");
+    const hist = x.props.status_code_history ? `<span>was <b>${x.props.status_code_history.map(h => h.code).join(", ")}</b></span>` : "";
+    el.innerHTML = `<div class="row">${badge(x.type)}${chip(x.status)}${x.isNew ? `<span class="new">NEW</span>` : ""}</div>`
+      + `<div><div class="val">${esc(x.value)}</div><div class="id">${esc(x.id)}</div></div>`
+      + (kv || hist ? `<div class="kv">${kv}${hist}</div>` : "")
+      + `<div class="row">${x.sources.map(s => `<span class="pill">${esc(s)}</span>`).join("")}`
+      + `<span class="pill">${ADJ[x.id].length} link${ADJ[x.id].length === 1 ? "" : "s"}</span>`
+      + x.tags.map(t => `<span class="pill">#${esc(t)}</span>`).join("") + `</div>`
+      + (x.notes ? `<div class="id">note: ${esc(x.notes)}</div>` : "");
+  }
+  function pick(id) {
+    selected = id;
+    if (ADJ[id].length > 1 || id === dom) expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+    showDetail(); run();
+  }
+  function reset(all) {
+    for (const k in pos) delete pos[k];
+    expanded = new Set(all ? NODES.map(x => x.id) : [dom, H.api, ip10]); selected = H.api;
+    showDetail(); run(all ? 420 : 300);
+  }
+  svg.addEventListener("click", ev => { const g = ev.target.closest(".node"); if (g) pick(g.dataset.id); });
+  svg.addEventListener("keydown", ev => { const g = ev.target.closest(".node"); if (g && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); pick(g.dataset.id); } });
+  document.getElementById("resetGraph").onclick = () => reset(false);
+  document.getElementById("expandAll").onclick = () => reset(true);
+  document.getElementById("legend").innerHTML = TYPES.map(t => `<span><i style="background:var(--t-${t})"></i>${t}</span>`).join("")
+    + `<span>ring colour = triage status</span><span>+n = hidden links</span>`;
+  reset(false);
+
+  // ---- ingest ----------------------------------------------------------------
+  const TOOLS = [
+    ["subfinder", '{"host":"api.example.com","input":"example.com","source":"crtsh"}',
+      [["", "subdomain", "api.example.com"], ["subdomain_of", "domain", "example.com"]], "The enumerated apex comes from the tool, so no guessing is needed."],
+    ["shuffledns", "admin.example.com. A 203.0.113.10",
+      [["", "subdomain", "admin.example.com"], ["subdomain_of", "domain", "example.com"], ["resolves_to", "ip", "203.0.113.10"]], "Plain resolved-host lists work too."],
+    ["dnsx", '{"host":"api.example.com","a":["203.0.113.10"],\n "cname":["lb.example.net"]}',
+      [["", "subdomain", "api.example.com"], ["resolves_to", "ip", "203.0.113.10"], ["cname_to", "subdomain", "lb.example.net"]], "PTR records are kept as a property on the IP."],
+    ["httpx", '{"url":"https://api.example.com/v2/users","status_code":200,\n "title":"Users API","tech":["nginx","Node.js"],\n "ip":"203.0.113.10","tls":{"subject_an":["*.example.com"]}}',
+      [["", "subdomain", "api.example.com"], ["has_endpoint", "endpoint", "api.example.com/v2/users"], ["uses_tech", "technology", "nginx"], ["uses_tech", "technology", "Node.js"], ["resolves_to", "ip", "203.0.113.10"], ["shares_cert", "certificate", "*.example.com"]],
+      "Status code, title and size land on the endpoint. If the code differs from last time, the old one is kept as history."],
+    ["nmap", '<port protocol="tcp" portid="22"><state state="open"/>\n <service name="ssh" product="OpenSSH" version="8.9"/></port>',
+      [["", "ip", "203.0.113.10"], ["runs_service", "service", "203.0.113.10:22/tcp"]], "Reads -oX XML. Product and version enrich the same service node naabu created."],
+    ["naabu", '{"host":"api.example.com","ip":"203.0.113.10","port":443}',
+      [["", "ip", "203.0.113.10"], ["runs_service", "service", "203.0.113.10:443/tcp"], ["resolves_to", "subdomain", "api.example.com"]], "A fast sweep first, then nmap fills in detail on the same node."],
+    ["katana", '{"request":{"method":"POST",\n  "endpoint":"https://api.example.com/go?redirect_uri=/home",\n  "source":"https://api.example.com/app.js"},\n "response":{"status_code":302}}',
+      [["has_endpoint", "endpoint", "api.example.com/go"], ["has_param", "parameter", "api.example.com/go#redirect_uri"]], "Endpoints found inside scripts are tagged js-sourced."],
+    ["gau", "https://shop.example.com/item?id=1",
+      [["has_endpoint", "endpoint", "shop.example.com/item"], ["has_param", "parameter", "shop.example.com/item#id"]], "Tagged archive: seen historically, not probed. Pair with httpx for live status."],
+    ["waybackurls", "http://shop.example.com/old.php?file=a.txt",
+      [["has_endpoint", "endpoint", "shop.example.com/old.php"], ["has_param", "parameter", "shop.example.com/old.php#file"]], "Merges into the same nodes gau produces."],
+    ["ffuf", '{"config":{"url":"https://api.example.com/FUZZ"},\n "results":[{"input":{"FUZZ":"admin"},"status":403,\n   "length":153,"url":"https://api.example.com/admin"}]}',
+      [["has_endpoint", "endpoint", "api.example.com/admin"]], "The run config tells content discovery, vhost and parameter fuzzing apart."],
+    ["kiterunner", '{"url":"https://api.example.com/api/v1/health","method":"GET",\n "status":200,"length":17}',
+      [["has_endpoint", "endpoint", "api.example.com/api/v1/health"]], "Route hits are tagged api."],
+    ["x8", '{"url":"https://api.example.com/v2/users",\n "found_params":[{"name":"debug","reflected":true}]}',
+      [["", "endpoint", "api.example.com/v2/users"], ["has_param", "parameter", "api.example.com/v2/users#debug"]], "The reflected flag is kept, so reflected:true finds these later."],
+    ["nuclei", '{"template-id":"git-config","type":"http",\n "info":{"name":"Git Config Exposure","severity":"medium"},\n "matched-at":"https://dev.example.com/.git/config"}',
+      [["", "finding", "git-config @ https://dev.example.com/.git/config"], ["affects", "endpoint", "dev.example.com/.git/config"]], "Network matches attach to the host or IP instead of an endpoint."],
+  ];
+  const toolsEl = document.getElementById("tools");
+  function showTool(i) {
+    const [name, raw, yields, note] = TOOLS[i];
+    [...toolsEl.children].forEach((b, k) => b.setAttribute("aria-pressed", k === i));
+    document.getElementById("raw").textContent = raw;
+    document.getElementById("yield").innerHTML = yields.map(([via, t, v]) =>
+      `<div>${badge(t)}<span>${esc(v)}</span>${via ? `<span class="via">via ${via}</span>` : ""}</div>`).join("");
+    document.getElementById("toolNote").textContent = note;
+  }
+  toolsEl.innerHTML = TOOLS.map((t, i) => `<button class="tool" data-i="${i}">${t[0]}</button>`).join("");
+  toolsEl.addEventListener("click", ev => { if (ev.target.dataset.i) showTool(+ev.target.dataset.i); });
+  showTool(3);
+
+  // ---- query engine (a subset of the real one, same syntax) -------------------
+  const ALIAS = { code: "status_code", len: "content_length", sev: "severity", src: "source", tags: "tag" };
+  function parse(q) {
+    return (q.match(/-?(?:[A-Za-z_][\w-]*:)?(?:"[^"]*"|\S+)/g) || []).map(tok => {
+      const negate = tok.length > 1 && tok[0] === "-"; if (negate) tok = tok.slice(1);
+      let key = null, val = tok; const m = tok.match(/^([A-Za-z_][\w-]*):([\s\S]*)$/);
+      if (m && !m[2].startsWith("//") && tok[0] !== '"') { key = ALIAS[m[1].toLowerCase()] || m[1].toLowerCase(); val = m[2]; }
+      const quoted = val.length >= 2 && val[0] === '"' && val.at(-1) === '"'; if (quoted) val = val.slice(1, -1);
+      let op = "="; const mo = key && !quoted && val.match(/^(>=|<=|>|<)(.+)$/); if (mo) { op = mo[1]; val = mo[2]; }
+      return { key, op, negate, values: quoted ? [val] : val.split("|").filter(Boolean) };
+    }).filter(t => t.values.length);
+  }
+  const like = (pattern, contains) => {
+    const body = pattern.split("*").map(s => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+    return new RegExp(pattern.includes("*") || !contains ? "^" + body + "$" : body, "i");
+  };
+  const num = (a, op, raw) => { const b = Number(raw); if (raw === "" || isNaN(b)) throw new Error(`expected a number, got '${raw}'`); return a != null && (op === ">" ? a > b : op === ">=" ? a >= b : op === "<" ? a < b : a <= b); };
+  function test(x, t) {
+    const any = fn => t.values.some(fn), k = t.key;
+    if (k === null) return any(v => like(v, true).test(x.value) || like(v, true).test(x.notes) || x.tags.some(g => like(v, true).test(g)));
+    if (k === "type" || k === "status" || k === "id") return any(v => like(v).test(x[k]));
+    if (k === "value" || k === "notes") return any(v => like(v, true).test(x[k]));
+    if (k === "tag") return any(v => x.tags.some(g => like(v).test(g)));
+    if (k === "source") return any(v => x.sources.some(g => like(v).test(g)));
+    if (k === "host") return any(v => like(v).test(x.value) || like(v + "/*").test(x.value) || like(v + ":*").test(x.value));
+    if (k === "tech") { const hosts = x.type === "subdomain" ? [x.id] : EDGES.filter(d => d.type === "has_endpoint" && d.b === x.id).map(d => d.a);
+      return any(v => EDGES.some(d => d.type === "uses_tech" && hosts.includes(d.a) && like(v, true).test(BY[d.b].value))); }
+    if (k === "new") { if (t.values[0] !== "last") throw new Error("this demo only knows new:last"); return x.isNew; }
+    if (k === "stale" || k === "seen") throw new Error(`${k}: needs real timestamps, so it is not in this demo`);
+    if (k === "has") return any(v => v === "notes" ? !!x.notes : v === "tags" ? x.tags.length > 0 : x.props[v] != null);
+    if (k === "links") return any(v => num(ADJ[x.id].length, t.op === "=" ? ">=" : t.op, v) && (t.op !== "=" || ADJ[x.id].length === +v));
+    const pv = x.props[k];
+    if (t.op !== "=") return any(v => num(typeof pv === "number" ? pv : null, t.op, v));
+    return pv != null && any(v => like(v).test(String(pv)));
+  }
+  const search = q => { const terms = parse(q); return NODES.filter(x => terms.every(t => test(x, t) !== t.negate)); };
+
+  const LEADS = [
+    ["New since last import", "new:last"], ["Open findings", "type:finding -status:done|ignored"],
+    ["401 / 403 endpoints", "type:endpoint code:401|403"], ["5xx endpoints", "type:endpoint code:5*"],
+    ["Status code changed", "type:endpoint has:status_code_history"], ["Sensitive-looking paths", "type:endpoint value:*/.git*|*backup*|*swagger*|*/debug*"],
+    ["Reflected parameters", "type:parameter reflected:true"], ["Juicy parameter names", "type:parameter name:redirect*|url|file*|id|debug"],
+    ["Endpoints found in JavaScript", "type:endpoint tag:js-sourced"], ["Archive-only endpoints", "type:endpoint tag:archive -has:status_code"],
+    ["Shared infrastructure", "type:ip|certificate links:>=4"], ["Non-web services", "type:service -port:80|443"],
+  ];
+  const SYNTAX = [["type:endpoint code:403", "filters are ANDed"], ["code:401|403", "| means OR"], ["type:endpoint code:>=500", "numeric comparison"],
+    ["type:subdomain value:*dev*", "* is a wildcard"], ["type:endpoint -tag:archive", "- negates a term"], ["host:api.example.com", "a host and everything under it"],
+    ["type:endpoint tech:nginx", "by detected technology"], ["type:finding sev:high", "findings by severity"], ["status:flagged", "by triage status"],
+    ["source:katana", "by the tool that reported it"], ["has:notes", "has notes, tags or any property"], ['title:"sign in"', "quote values with spaces"]];
+  const qEl = document.getElementById("q"), rowsEl = document.getElementById("rows"), metaEl = document.getElementById("qmeta"), leadsEl = document.getElementById("leads");
+  const info = x => { const p = x.props;
+    return x.type === "endpoint" ? [p.method, p.title].filter(Boolean).join(" · ") : x.type === "parameter" ? [p.location, p.reflected ? "reflected" : "", p.example ? "e.g. " + p.example : ""].filter(Boolean).join(" · ")
+      : x.type === "service" ? [p.name, p.product, p.version].filter(Boolean).join(" ") : x.type === "finding" ? [p.severity, p.kind].filter(Boolean).join(" · ") : p.ptr || p.issuer || p.cdn || ""; };
+  function runQuery(q) {
+    qEl.value = q;
+    [...leadsEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.q === q));
+    let hits;
+    try { hits = search(q); } catch (err) { qEl.classList.add("bad"); metaEl.textContent = "Query error: " + err.message; rowsEl.innerHTML = ""; return; }
+    qEl.classList.remove("bad");
+    metaEl.textContent = `${hits.length} of ${NODES.length} assets match`;
+    rowsEl.innerHTML = hits.map(x => { const c = x.props.status_code;
+      return `<tr><td>${badge(x.type)}</td><td class="v">${esc(x.value)}${x.isNew ? `<span class="new">NEW</span>` : ""}</td>`
+        + `<td class="n ${c ? "c" + String(c)[0] : ""}">${c ?? ""}</td><td class="n">${esc(info(x))}</td><td>${chip(x.status)}</td><td class="n">${esc(x.sources.join(" "))}</td></tr>`; }).join("")
+      || `<tr><td colspan="6" class="n">No matches.</td></tr>`;
+  }
+  leadsEl.innerHTML = LEADS.map(([name, q]) => `<button class="lead" data-q="${esc(q)}"><span>${name}</span><b>${search(q).length}</b></button>`).join("");
+  leadsEl.addEventListener("click", ev => { const b = ev.target.closest(".lead"); if (b) runQuery(b.dataset.q); });
+  qEl.addEventListener("input", () => runQuery(qEl.value));
+  const syn = document.getElementById("syntax");
+  syn.innerHTML = SYNTAX.map(([q, what]) => `<div><button data-q="${esc(q)}">${esc(q)}</button> ${what}</div>`).join("");
+  syn.addEventListener("click", ev => { if (ev.target.dataset.q) { runQuery(ev.target.dataset.q); qEl.focus(); } });
+  runQuery("type:endpoint code:401|403");
+
+  // ---- triage state machine (from domain/model.py) --------------------------
+  const MOVES = { untriaged: ["in_scope","ignored","out_of_scope"], in_scope: ["testing","flagged","ignored","out_of_scope"],
+    testing: ["flagged","confirmed","in_scope","done"], flagged: ["confirmed","testing","done","ignored"],
+    confirmed: ["done","flagged"], done: ["in_scope"], ignored: ["in_scope"], out_of_scope: ["in_scope"] };
+  const statesEl = document.getElementById("states");
+  function showState(s) {
+    statesEl.innerHTML = Object.keys(MOVES).map(k =>
+      `<button class="state ${k === s ? "on" : MOVES[s].includes(k) ? "next" : ""}" data-s="${k}" aria-pressed="${k === s}">${chip(k)}</button>`).join("");
+    document.getElementById("stateNote").innerHTML = `From <b>${s}</b> an asset can move to ${MOVES[s].map(m => `<b>${m}</b>`).join(", ")}.`
+      + (MOVES[s].length === 1 ? " Closed states can always be reopened, so nothing gets stuck." : "");
+  }
+  statesEl.addEventListener("click", ev => { const b = ev.target.closest(".state"); if (b) showState(b.dataset.s); });
+  showState("testing");
+
+  // ---- copy ------------------------------------------------------------------
+  document.getElementById("copy").addEventListener("click", ev => {
+    const text = document.getElementById("cli").innerText.split("\n").map(l => l.replace(/^\$ /, "").replace(/\s+#.*$/, "")).join("\n");
+    const done = ok => { ev.target.textContent = ok ? "copied" : "select and copy"; setTimeout(() => ev.target.textContent = "copy", 1600); };
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById("cli")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done(false); };
+    navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text).then(() => done(true), fallback) : fallback();
+  });
+})();
+</script>
