@@ -83,8 +83,11 @@ infrastructure, non-web services, stale hosts. They are defined in
   triage, grouping into a `functionality`, creating a `finding` that `affects`
   them, or linking two nodes by a chosen edge type. No build step / node_modules.
 - **Editor ops** (`domain/ingest.py`) — `add_finding`, `create_functionality`,
-  `bulk_set_status`, plus edge-by-id linking, all reused by the API (and ready
-  for the future MCP server).
+  `bulk_set_status`, plus edge-by-id linking, all reused by the API and the
+  agent tools.
+- **Agent surface** (`adapters/agent/`) — eight tools for walking the graph,
+  served over MCP (stdio and HTTP) and callable from the shell. See
+  [Agents](#agents).
 - **CLI** (`rainman …`).
 
 > **Store choice:** Phase 0 uses **SQLite** (zero-setup, fits local-first)
@@ -153,6 +156,46 @@ curl localhost:8000/leads
 curl -X POST localhost:8000/import/httpx --data-binary @out.jsonl -H 'content-type: text/plain'
 ```
 
+## Agents
+
+An agent can walk the graph through eight tools. Anywhere a node is expected it
+may pass an id (`sub:api.example.com`) or just the value it has in hand — a
+hostname, a URL, an IP. Answers are compact rows, capped, and always say how
+much was left out and how to get the rest; errors name the fix.
+
+| Tool | What it answers |
+|---|---|
+| `overview` | What is in here: counts, root domains, which types connect to which, leads with matches, query syntax |
+| `find` | Search with the query language — or `count_by` a field/prop to size up a large result |
+| `inspect` | One node in full, plus a map of its relationships with counts and samples |
+| `neighbors` | One hop, filtered by edge, direction, type or a query on the neighbour |
+| `traverse` | Several hops from a node or from every match of a query, with the route to each result |
+| `path` | Shortest chain of relationships between two nodes |
+| `annotate` | Append a note, add tags, move triage status (state machine enforced) |
+| `report_finding` | Record a finding linked to the assets it affects, marked agent-authored |
+
+```bash
+# MCP over stdio — e.g. for Claude Code:
+claude mcp add rainman -- rainman --db /path/to/rainman.db mcp
+rainman mcp --read-only --program acme     # no write tools, one workspace
+
+# MCP over HTTP, on the running server:
+rainman serve                              # then point the client at http://127.0.0.1:8000/mcp
+rainman serve --agent-read-only
+
+# the same tools from a shell (for agents that only have a terminal):
+rainman call                               # list tools and arguments
+rainman call inspect '{"node": "api.example.com"}'
+rainman call traverse '{"start": "203.0.113.10", "hops": ["subdomain", "endpoint"], "where": "code:200"}'
+rainman call find '{"query": "type:endpoint", "count_by": "status_code"}'
+```
+
+Agent notes are appended with an `[agent]` prefix and never replace yours;
+agent findings carry `author:agent`, so `type:finding author:agent` lists what
+needs your review. Titles, notes and props come from the targets you scanned —
+the server tells the agent to treat them as data, not instructions, but review
+agent write-backs as you would any other untrusted suggestion.
+
 ## Test
 
 ```bash
@@ -166,6 +209,5 @@ to attach hosts imported by earlier versions to their apex domains.
 
 ## Next (roadmap)
 
-Still to build from [PROPOSAL.md §17](PROPOSAL.md): the Burp extension, the
-MCP agent surface (the query language and leads are its read side), undo and an
+Still to build from [PROPOSAL.md §17](PROPOSAL.md): the Burp extension, undo and an
 audit log, infra clustering and a WebGL renderer for very large graphs.

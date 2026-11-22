@@ -90,11 +90,57 @@ class GraphRepository(Protocol):
         nodes and the total match count."""
         ...
 
+    def count(self, terms: list, *, program: Optional[str] = None) -> int:
+        """Number of nodes a parsed query matches."""
+        ...
+
     def record_import(
         self, tool: str, program: str, started_at, *, nodes: int, edges: int, new_nodes: int
     ) -> None: ...
 
     def imports(self, program: Optional[str] = None, limit: int = 20) -> list[dict]: ...
+
+    # -- graph navigation (used by the agent surface) ----------------------
+    def find_by_value(
+        self, values: Iterable[str], program: Optional[str] = None, limit: int = 20
+    ) -> list[Node]:
+        """Nodes whose value equals any of ``values``, ignoring case."""
+        ...
+
+    def related(
+        self,
+        ids: Iterable[str],
+        *,
+        edge_types: Optional[list[str]] = None,
+        direction: Optional[str] = None,
+        node_types: Optional[list[str]] = None,
+        terms: Optional[list] = None,
+        program: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[tuple[str, str, Edge, Node]], int]:
+        """One filtered hop out of ``ids``: ``(origin_id, direction, edge,
+        far_node)`` rows plus the total match count."""
+        ...
+
+    def edge_summary(self, node_id: str) -> list[dict]:
+        """Neighbour counts per (edge type, direction, far node type)."""
+        ...
+
+    def adjacency(self, ids: Iterable[str]) -> list[tuple[str, str, str, str, str]]:
+        """``(origin, far, edge_type, direction, far_node_type)`` per edge."""
+        ...
+
+    def facet(
+        self, terms: list, by: str, *, program: Optional[str] = None, limit: int = 30
+    ) -> tuple[list[tuple[object, int]], int]:
+        """Group a query's matches by a field/tag/prop; returns the groups and
+        the total match count."""
+        ...
+
+    def schema(self, program: Optional[str] = None) -> list[dict]:
+        """Observed (from type, edge type, to type) triples with counts."""
+        ...
 
 
 @runtime_checkable

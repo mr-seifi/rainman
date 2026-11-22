@@ -82,6 +82,7 @@ _COLUMNS = {
     "type": "type", "status": "status", "program": "program",
     "author": "author_type", "id": "id",
 }
+_EXACT = {"type", "status", "author"}
 _SORT_COLUMNS = {"value", "type", "status", "first_seen", "last_seen", "program", "confidence"}
 _DEGREE = "(SELECT COUNT(*) FROM edges WHERE from_id = nodes.id OR to_id = nodes.id)"
 _ESC = " ESCAPE '\\'"
@@ -133,6 +134,7 @@ class SqliteGraphRepository:
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         self._tx_depth = 0
+        self._schema_cache: dict = {}
         # WAL: readers aren't blocked by a long import; no-op for :memory:.
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
@@ -468,6 +470,10 @@ class SqliteGraphRepository:
                 pat = _like(v, contains=True)
                 parts.append(f"(value LIKE ?{_ESC} OR notes LIKE ?{_ESC} OR tags LIKE ?{_ESC})")
                 args.extend([pat, pat, pat])
+            elif key in _EXACT and "*" not in v:
+                # lowercase enums: an equality the type/status indexes can serve
+                parts.append(f"{_COLUMNS[key]} = ?")
+                args.append(v.lower())
             elif key in _COLUMNS:
                 parts.append(f"{_COLUMNS[key]} LIKE ?{_ESC}")
                 args.append(_like(v))
@@ -534,6 +540,27 @@ class SqliteGraphRepository:
             sql = f"NOT COALESCE({sql}, 0)"
         return sql, args
 
+    def _where(self, terms: list[Term], program: Optional[str]) -> tuple[str, list]:
+        """Compile parsed terms into one WHERE clause over ``nodes``."""
+        where, args = ["1"], []
+        if program:
+            where.append("program = ?")
+            args.append(program)
+        for t in terms:
+            if '"' in (t.key or ""):
+                raise ValueError(f"bad key {t.key!r}")
+            sql, a = self._compile_term(t, program)
+            where.append(sql)
+            args.extend(a)
+        return " AND ".join(where), args
+
+    @_locked
+    def count(self, terms: list[Term], *, program: Optional[str] = None) -> int:
+        """How many nodes a query matches, without fetching or sorting any."""
+        clause, args = self._where(terms, program)
+        return self._conn.execute(
+            f"SELECT COUNT(*) c FROM nodes WHERE {clause}", args).fetchone()["c"]
+
     @_locked
     def query(
         self,
@@ -545,17 +572,7 @@ class SqliteGraphRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[Node], int]:
-        where, args = ["1"], []
-        if program:
-            where.append("program = ?")
-            args.append(program)
-        for t in terms:
-            if '"' in (t.key or ""):
-                raise ValueError(f"bad key {t.key!r}")
-            sql, a = self._compile_term(t, program)
-            where.append(sql)
-            args.extend(a)
-        clause = " AND ".join(where)
+        clause, args = self._where(terms, program)
         total = self._conn.execute(
             f"SELECT COUNT(*) c FROM nodes WHERE {clause}", args
         ).fetchone()["c"]
@@ -581,6 +598,175 @@ class SqliteGraphRepository:
             [*args, *order_args, limit, offset],
         ).fetchall()
         return [self._row_to_node(r) for r in rows], total
+
+    # -- graph navigation (agent surface) ----------------------------------
+    @_locked
+    def find_by_value(
+        self, values: Iterable[str], program: Optional[str] = None, limit: int = 20
+    ) -> list[Node]:
+        """Nodes whose value equals any of ``values`` (case-insensitive) — how
+        a bare ``api.example.com`` is turned into a node."""
+        vals = list(dict.fromkeys(v for v in values if v))
+        if not vals:
+            return []
+        sql = f"SELECT * FROM nodes WHERE value COLLATE NOCASE IN ({','.join('?' * len(vals))})"
+        args: list = list(vals)
+        if program:
+            sql += " AND program = ?"
+            args.append(program)
+        rows = self._conn.execute(sql + " ORDER BY type, id LIMIT ?", [*args, limit]).fetchall()
+        return [self._row_to_node(r) for r in rows]
+
+    def _related_sql(
+        self, ids: list[str], edge_types, direction, node_types, terms, program
+    ) -> tuple[str, list]:
+        """FROM/WHERE for "edges touching ``ids``, seen from their side": each
+        row carries ``origin`` (the id we started at), ``far`` and ``dir``."""
+        marks = ",".join("?" * len(ids))
+        halves, args = [], []
+        if direction in (None, "out"):
+            halves.append(
+                f"SELECT e.*, e.from_id AS origin, e.to_id AS far, 'out' AS dir"
+                f" FROM edges e WHERE e.from_id IN ({marks})")
+            args.extend(ids)
+        if direction in (None, "in"):
+            halves.append(
+                f"SELECT e.*, e.to_id AS origin, e.from_id AS far, 'in' AS dir"
+                f" FROM edges e WHERE e.to_id IN ({marks})")
+            args.extend(ids)
+        if not halves:
+            raise ValueError(f"bad direction {direction!r}: use 'out' or 'in'")
+        # CROSS JOIN pins the plan: walk the few matching edges, then fetch each
+        # far node by primary key. Left to itself the planner starts from every
+        # node of the requested type (all 180k parameters) and probes the edges.
+        sql = (f"FROM ({' UNION ALL '.join(halves)}) x CROSS JOIN nodes m ON m.id = x.far"
+               " WHERE x.far != x.origin")
+        if edge_types:
+            sql += f" AND x.type IN ({','.join('?' * len(edge_types))})"
+            args.extend(edge_types)
+        if node_types:
+            sql += f" AND +m.type IN ({','.join('?' * len(node_types))})"
+            args.extend(node_types)
+        if terms:
+            clause, a = self._where(terms, program)
+            # correlated on the primary key: tests only the candidate rows
+            # instead of scanning every node for the filter first
+            sql += f" AND EXISTS (SELECT 1 FROM nodes WHERE nodes.id = m.id AND {clause})"
+            args.extend(a)
+        return sql, args
+
+    @_locked
+    def related(
+        self,
+        ids: Iterable[str],
+        *,
+        edge_types: Optional[list[str]] = None,
+        direction: Optional[str] = None,
+        node_types: Optional[list[str]] = None,
+        terms: Optional[list[Term]] = None,
+        program: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[tuple[str, str, Edge, Node]], int]:
+        """One hop out of ``ids``, filterable by edge type, direction, far node
+        type and a hunter query on the far node. Returns
+        ``(origin_id, direction, edge, far_node)`` rows and the total count."""
+        ids = list(ids)
+        if not ids:
+            return [], 0
+        sql, args = self._related_sql(ids, edge_types, direction, node_types, terms, program)
+        total = self._conn.execute(f"SELECT COUNT(*) c {sql}", args).fetchone()["c"]
+        rows = self._conn.execute(
+            f"SELECT x.* {sql} ORDER BY x.type, x.dir, m.value, x.id LIMIT ? OFFSET ?",
+            [*args, limit, offset],
+        ).fetchall()
+        far_ids = list(dict.fromkeys(r["far"] for r in rows))
+        nodes: dict[str, Node] = {}
+        for i in range(0, len(far_ids), 500):
+            chunk = far_ids[i:i + 500]
+            for r in self._conn.execute(
+                f"SELECT * FROM nodes WHERE id IN ({','.join('?' * len(chunk))})", chunk
+            ).fetchall():
+                nodes[r["id"]] = self._row_to_node(r)
+        return [(r["origin"], r["dir"], self._row_to_edge(r), nodes[r["far"]]) for r in rows], total
+
+    @_locked
+    def edge_summary(self, node_id: str) -> list[dict]:
+        """What hangs off a node, as counts per (edge type, direction, far node
+        type) — the map an agent reads before deciding where to walk."""
+        sql, args = self._related_sql([node_id], None, None, None, None, None)
+        rows = self._conn.execute(
+            f"SELECT x.type AS edge, x.dir AS dir, m.type AS far_type, COUNT(*) c {sql}"
+            " GROUP BY x.type, x.dir, m.type ORDER BY x.type, x.dir, m.type", args,
+        ).fetchall()
+        return [{"edge": r["edge"], "direction": r["dir"], "type": r["far_type"], "count": r["c"]}
+                for r in rows]
+
+    @_locked
+    def adjacency(self, ids: Iterable[str]) -> list[tuple[str, str, str, str, str]]:
+        """``(origin, far, edge_type, direction, far_node_type)`` for every edge
+        touching ``ids`` — the bulk lookup behind path finding."""
+        ids = list(ids)
+        out: list = []
+        for i in range(0, len(ids), 400):
+            sql, args = self._related_sql(ids[i:i + 400], None, None, None, None, None)
+            out.extend(
+                (r["origin"], r["far"], r["type"], r["dir"], r["ft"])
+                for r in self._conn.execute(
+                    f"SELECT x.origin, x.far, x.type, x.dir, m.type AS ft {sql}", args)
+            )
+        return out
+
+    @_locked
+    def facet(
+        self, terms: list[Term], by: str, *, program: Optional[str] = None, limit: int = 30
+    ) -> tuple[list[tuple[object, int]], int]:
+        """Group the matches of a query by a field, tag, source or prop and
+        count each group — a summary of a result set too big to page through."""
+        clause, args = self._where(terms, program)
+        total = self._conn.execute(
+            f"SELECT COUNT(*) c FROM nodes WHERE {clause}", args).fetchone()["c"]
+        by = {"author": "author_type", "tags": "tag", "sources": "source"}.get(by, by)
+        if by in ("tag", "source"):
+            col = "tags" if by == "tag" else "sources"
+            # json_each has its own type/value/id columns, so filter first
+            sql = (f"SELECT j.value AS k, COUNT(*) c FROM (SELECT {col} AS arr FROM nodes"
+                   f" WHERE {clause}) n, json_each(n.arr) j GROUP BY k")
+        elif by == "host":
+            # value up to the first / : or # — the host an endpoint or param lives on
+            cut = "MIN(CASE WHEN instr(value,'/')>0 THEN instr(value,'/') ELSE 99999 END," \
+                  " CASE WHEN instr(value,'#')>0 THEN instr(value,'#') ELSE 99999 END)"
+            sql = (f"SELECT substr(value, 1, {cut} - 1) AS k, COUNT(*) c FROM nodes"
+                   f" WHERE {clause} GROUP BY k")
+        elif by in _SORT_COLUMNS or by == "author_type":
+            sql = f"SELECT {by} AS k, COUNT(*) c FROM nodes WHERE {clause} GROUP BY k"
+        else:
+            if '"' in by:
+                raise ValueError(f"bad count_by key {by!r}")
+            sql = f"SELECT json_extract(props, ?) AS k, COUNT(*) c FROM nodes WHERE {clause} GROUP BY k"
+            args = [f'$."{by}"', *args]
+        rows = self._conn.execute(sql + " ORDER BY c DESC, k LIMIT ?", [*args, limit]).fetchall()
+        return [(r["k"], r["c"]) for r in rows], total
+
+    @_locked
+    def schema(self, program: Optional[str] = None) -> list[dict]:
+        """Which node types are actually connected by which edge types, with
+        counts — the shape of this particular graph."""
+        # A full join over the edge table, so remember it until edges change.
+        stamp = tuple(self._conn.execute(
+            "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM edges").fetchone())
+        cached = self._schema_cache.get(program)
+        if cached and cached[0] == stamp:
+            return [dict(r) for r in cached[1]]
+        sql = ("SELECT e.type AS edge, a.type AS src, b.type AS dst, COUNT(*) c FROM edges e"
+               " JOIN nodes a ON a.id = e.from_id JOIN nodes b ON b.id = e.to_id")
+        args: tuple = ()
+        if program:
+            sql, args = sql + " WHERE e.program = ?", (program,)
+        rows = self._conn.execute(sql + " GROUP BY e.type, a.type, b.type ORDER BY c DESC", args)
+        out = [{"from": r["src"], "edge": r["edge"], "to": r["dst"], "count": r["c"]} for r in rows]
+        self._schema_cache[program] = (stamp, out)
+        return [dict(r) for r in out]
 
     # -- import log --------------------------------------------------------
     @_locked

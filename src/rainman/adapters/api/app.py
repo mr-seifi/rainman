@@ -16,7 +16,7 @@ from typing import Optional
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -32,6 +32,7 @@ from ...domain.model import (
     Status,
     can_transition,
 )
+from ..agent import AgentTools, McpServer
 from ..importers import available, get_importer
 from ..store import SqliteGraphRepository
 from ...domain.query import LEADS, parse_query
@@ -110,9 +111,10 @@ class BulkStatusIn(BaseModel):
     add_tags: list[str] = []
 
 
-def create_app(db_path: str = "rainman.db") -> FastAPI:
+def create_app(db_path: str = "rainman.db", *, agent_read_only: bool = False) -> FastAPI:
     repo = SqliteGraphRepository(db_path)
     svc = IngestService(repo)
+    mcp = McpServer(AgentTools(repo, read_only=agent_read_only))
     app = FastAPI(title="rainman", version="0.1.0")
 
     # The graph holds recon data and findings and the server has no login, so
@@ -246,13 +248,36 @@ def create_app(db_path: str = "rainman.db") -> FastAPI:
         """Pre-baked hunts with live counts — where to look next."""
         out = []
         for lead in LEADS:
-            _, total = repo.query(parse_query(lead["query"]), program=program, limit=1)
+            total = repo.count(parse_query(lead["query"]), program=program)
             out.append({**lead, "count": total})
         return {"leads": out}
 
     @app.get("/imports")
     def imports(program: Optional[str] = None, limit: int = 20):
         return {"imports": repo.imports(program=program, limit=limit)}
+
+    # -- agent surface ------------------------------------------------------
+    # MCP over HTTP (stateless): one JSON-RPC message or batch per POST. The
+    # same tools are on stdio via `rainman mcp`. Covered by the same-origin
+    # write guard above, so a web page cannot drive it.
+    @app.post("/mcp", include_in_schema=False)
+    async def mcp_endpoint(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": None,
+                 "error": {"code": -32700, "message": "invalid JSON"}}, status_code=400)
+        from starlette.concurrency import run_in_threadpool
+        reply = await run_in_threadpool(mcp.handle_payload, payload)
+        if reply is None:
+            return Response(status_code=202)
+        return JSONResponse(reply)
+
+    @app.get("/mcp", include_in_schema=False)
+    def mcp_no_stream():
+        # no server-initiated messages, so there is no SSE stream to open
+        return Response(status_code=405, headers={"Allow": "POST"})
 
     @app.post("/repair")
     def repair():

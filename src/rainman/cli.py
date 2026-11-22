@@ -6,6 +6,8 @@
     rainman leads
     rainman digest
     rainman serve --port 8000
+    rainman mcp                      # agent tools over MCP (stdio)
+    rainman call inspect '{"node": "api.example.com"}'
 """
 
 from __future__ import annotations
@@ -52,8 +54,56 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
     from .adapters.api import create_app
 
-    uvicorn.run(create_app(args.db), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(args.db, agent_read_only=args.agent_read_only),
+        host=args.host, port=args.port,
+    )
     return 0
+
+
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    from .adapters.agent import AgentTools, McpServer
+
+    repo = SqliteGraphRepository(args.db)
+    try:
+        McpServer(AgentTools(repo, program=args.program, read_only=args.read_only)).serve_stdio()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        repo.close()
+    return 0
+
+
+def _cmd_call(args: argparse.Namespace) -> int:
+    """Run one agent tool from the shell — the same code path as MCP."""
+    from .adapters.agent import AgentTools, ToolError
+
+    repo = SqliteGraphRepository(args.db)
+    tools = AgentTools(repo, program=args.program, read_only=args.read_only)
+    try:
+        if not args.tool:
+            for spec in tools.specs():
+                params = spec["inputSchema"]["properties"]
+                required = set(spec["inputSchema"]["required"])
+                sig = ", ".join(k if k in required else f"[{k}]" for k in params)
+                print(f"{spec['name']}({sig})\n    {spec['description']}\n")
+            return 0
+        try:
+            arguments = json.loads(args.arguments) if args.arguments else {}
+            if not isinstance(arguments, dict):
+                raise ValueError("arguments must be a JSON object")
+        except ValueError as e:
+            print(f"bad arguments: {e}", file=sys.stderr)
+            return 2
+        try:
+            result = tools.call(args.tool, arguments)
+        except (ToolError, TypeError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=None if args.compact else 2, ensure_ascii=False, default=str))
+        return 0
+    finally:
+        repo.close()
 
 
 def _cmd_query(args: argparse.Namespace) -> int:
@@ -83,7 +133,7 @@ def _cmd_leads(args: argparse.Namespace) -> int:
 
     repo = SqliteGraphRepository(args.db)
     for lead in LEADS:
-        _, total = repo.query(parse_query(lead["query"]), program=args.program, limit=1)
+        total = repo.count(parse_query(lead["query"]), program=args.program)
         if total or args.all:
             print(f"{total:>7}  {lead['name']:<34} {lead['query']}")
     repo.close()
@@ -122,7 +172,23 @@ def main(argv: list[str] | None = None) -> int:
     ps = sub.add_parser("serve", help="run the API server")
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8000)
+    ps.add_argument("--agent-read-only", action="store_true",
+                    help="expose only the read tools on /mcp")
     ps.set_defaults(func=_cmd_serve)
+
+    pm = sub.add_parser("mcp", help="serve the agent tools over MCP on stdio")
+    pm.add_argument("--program", default=None, help="default workspace for every call")
+    pm.add_argument("--read-only", action="store_true", help="omit annotate / report_finding")
+    pm.set_defaults(func=_cmd_mcp)
+
+    pc = sub.add_parser(
+        "call", help="run one agent tool from the shell (no arguments lists the tools)")
+    pc.add_argument("tool", nargs="?", help="overview, find, inspect, neighbors, traverse, path, …")
+    pc.add_argument("arguments", nargs="?", help="JSON object, e.g. '{\"node\": \"api.example.com\"}'")
+    pc.add_argument("--program", default=None)
+    pc.add_argument("--read-only", action="store_true")
+    pc.add_argument("--compact", action="store_true", help="single-line JSON")
+    pc.set_defaults(func=_cmd_call)
 
     pq = sub.add_parser(
         "query", help="run a hunter query; prints one value/URL per line (pipe it into tools)",
